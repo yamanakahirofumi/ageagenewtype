@@ -1,0 +1,166 @@
+/* Dark theme CSS for IDE-style GenAI Desktop Application */
+
+.root {
+    -fx-base: #1e1e1e;
+    -fx-background-color: #1e1e1e;
+    -fx-control-inner-background: #252526;
+    -fx-text-fill: #cccccc;
+    -fx-font-family: "Segoe UI", -apple-system, sans-serif;
+    -fx-font-size: 13px;
+}
+
+/* MenuBar & Menu */
+.menu-bar {
+    -fx-background-color: #181818;
+    -fx-border-color: #3c3c3c;
+    -fx-border-width: 0 0 1px 0;
+}
+.menu-bar .label {
+    -fx-text-fill: #cccccc;
+}
+.menu:hover, .menu:showing, .menu-item:focused {
+    -fx-background-color: #333333;
+}
+.context-menu {
+    -fx-background-color: #252526;
+    -fx-border-color: #3c3c3c;
+    -fx-border-width: 1px;
+}
+
+/* SplitPane Divider */
+.split-pane {
+    -fx-background-color: #1e1e1e;
+}
+.split-pane-divider {
+    -fx-background-color: #3c3c3c;
+    -fx-padding: 0 2px 0 2px;
+}
+
+/* TreeView & ListView */
+.tree-view, .list-view {
+    -fx-background-color: #181818;
+    -fx-border-color: #3c3c3c;
+    -fx-border-width: 0;
+}
+.tree-cell, .list-cell {
+    -fx-background-color: #181818;
+    -fx-text-fill: #cccccc;
+    -fx-padding: 4px 8px;
+}
+.tree-cell:filled:selected, .list-cell:filled:selected {
+    -fx-background-color: #04395e;
+    -fx-text-fill: #ffffff;
+}
+.tree-cell:filled:hover, .list-cell:filled:hover {
+    -fx-background-color: #2a2d2e;
+}
+
+/* TabPane & Tab */
+.tab-pane .tab-header-area {
+    -fx-background-color: #181818;
+}
+.tab {
+    -fx-background-color: #2d2d2d;
+    -fx-background-insets: 0 1 0 0;
+    -fx-background-radius: 0;
+    -fx-padding: 6px 12px;
+}
+.tab:selected {
+    -fx-background-color: #1e1e1e;
+    -fx-border-color: #007acc #3c3c3c #1e1e1e #3c3c3c;
+    -fx-border-width: 2px 1px 1px 1px;
+}
+.tab .tab-label {
+    -fx-text-fill: #cccccc;
+}
+.tab:selected .tab-label {
+    -fx-text-fill: #ffffff;
+}
+
+/* TextArea, TextField, ComboBox */
+.text-area, .text-field {
+    -fx-control-inner-background: #1e1e1e;
+    -fx-text-fill: #d4d4d4;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-border-color: #3c3c3c;
+    -fx-border-radius: 3px;
+    -fx-background-radius: 3px;
+}
+.text-area .content {
+    -fx-background-color: #1e1e1e;
+}
+.combo-box {
+    -fx-background-color: #3c3c3c;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 3px;
+    -fx-border-radius: 3px;
+}
+.combo-box .list-cell {
+    -fx-background-color: #252526;
+    -fx-text-fill: #cccccc;
+}
+
+/* Button styling */
+.button {
+    -fx-background-color: #0e639c;
+    -fx-text-fill: #ffffff;
+    -fx-background-radius: 3px;
+    -fx-padding: 6px 14px;
+    -fx-cursor: hand;
+}
+.button:hover {
+    -fx-background-color: #1177bb;
+}
+.button:pressed {
+    -fx-background-color: #0c5282;
+}
+
+.button-secondary {
+    -fx-background-color: #3c3c3c;
+    -fx-text-fill: #cccccc;
+}
+.button-secondary:hover {
+    -fx-background-color: #4a4a4a;
+    -fx-text-fill: #ffffff;
+}
+
+/* Status Bar */
+#statusBar {
+    -fx-background-color: #007acc;
+    -fx-padding: 2px 8px;
+    -fx-border-color: #005a9e;
+    -fx-border-width: 1px 0 0 0;
+}
+#statusBar .label {
+    -fx-text-fill: #ffffff;
+    -fx-font-size: 11px;
+}
+
+/* Custom Message items */
+.chat-message-container {
+    -fx-padding: 8px;
+    -fx-background-radius: 5px;
+    -fx-margin: 5px;
+}
+.user-message {
+    -fx-background-color: #2d2d2d;
+    -fx-border-color: #007acc;
+    -fx-border-width: 0 0 0 3px;
+}
+.assistant-message {
+    -fx-background-color: #1a1a1a;
+    -fx-border-color: #8964ff;
+    -fx-border-width: 0 0 0 3px;
+}
+.message-header {
+    -fx-font-weight: bold;
+    -fx-text-fill: #8964ff;
+    -fx-font-size: 11px;
+}
+.user-message .message-header {
+    -fx-text-fill: #007acc;
+}
+.message-body {
+    -fx-padding: 4px 0 0 0;
+    -fx-text-fill: #cccccc;
+}
