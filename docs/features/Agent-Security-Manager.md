@@ -46,10 +46,13 @@ find
 cat
 grep
 pwd
+# 特定ディレクトリ配下を一括許可するが、特定のコマンドのみ拒否する設定例
+!rm
+!poweroff
+/usr/bin/*
 # 開発用許可
 git
 mvn
-!rm
 
 [http-url]
 https://api.github.com/*
