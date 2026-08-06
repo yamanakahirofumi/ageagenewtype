@@ -14,6 +14,7 @@
 
 ## 2. 機能・仕様 (`docs/features/`)
 - [仕様書](features/Specifications.md)：プロジェクト概要、主要機能、UI/UX の概要
+- [エージェント・セキュリティマネージャ仕様書](features/Agent-Security-Manager.md)：AIエージェントの安全な実行制限に関する仕様（ファイル、外部実行、HTTP）
 - [機能一覧](features/Functional-List.md)：本アプリケーションで提供するカテゴリ別の機能詳細
 - [画面一覧と遷移仕様](features/Screen-Transitions.md)：各画面の役割、主要項目、および画面間の遷移
 - [画面詳細設計](features/Screen-Details.md)：各画面のレイアウト、コンポーネント、表示項目の詳細
