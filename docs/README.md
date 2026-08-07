@@ -15,6 +15,7 @@
 ## 2. 機能・仕様 (`docs/features/`)
 - [仕様書](features/Specifications.md)：プロジェクト概要、主要機能、UI/UX の概要
 - [エージェント・セキュリティマネージャ仕様書](features/Agent-Security-Manager.md)：AIエージェントの安全な実行制限に関する仕様（ファイル、外部実行、HTTP）
+- [エージェント・セキュリティマネージャGUI仕様書](features/Agent-Security-Manager-GUI-Specification.md)：セキュリティ制限、バイパス設定、警告表示、監査ログ表示などのGUI設計仕様
 - [Git操作GUI仕様書](features/Git-Control-Specification.md)：GUIからGit操作（init, fetch, pull, commit, push, checkout, branch作成）を行うための機能仕様
 - [機能一覧](features/Functional-List.md)：本アプリケーションで提供するカテゴリ別の機能詳細
 - [画面一覧と遷移仕様](features/Screen-Transitions.md)：各画面の役割、主要項目、および画面間の遷移
