@@ -15,7 +15,9 @@ import net.hero.genai.model.Message;
 import net.hero.genai.model.WorkspaceFile;
 import net.hero.genai.service.OllamaApiService;
 import net.hero.genai.service.ChatStreamListener;
+import net.hero.genai.service.SecurityService;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.logging.Level;
@@ -35,6 +37,8 @@ public final class ChatController {
     @FXML private Label lblContextName;
     @FXML private TextArea txtPrompt;
     @FXML private Button btnSend;
+    @FXML private Label lblSecurityStatus;
+    @FXML private HBox securityWarningBanner;
 
     // Injected child controller for OllamaConfig
     @FXML private OllamaConfigController ollamaConfigController;
@@ -51,6 +55,15 @@ public final class ChatController {
         if (ollamaConfigController != null) {
             ollamaConfigController.setChatController(this);
         }
+
+        // Initialize Security status UI
+        updateSecurityStatusUI();
+        SecurityService.getInstance().registerOnSecurityStateChanged(() -> {
+            updateSecurityStatusUI();
+        });
+        SecurityService.getInstance().registerOnAutoRestore(() -> {
+            appendSystemInfoMessage("安全のため、セキュリティ制限を自動的に再有効化しました。");
+        });
 
         // Setup shortkey Ctrl+Enter for sending prompt
         txtPrompt.setOnKeyPressed(event -> {
@@ -270,5 +283,65 @@ public final class ChatController {
             container.getStyleClass().add("assistant-message");
         }
         return container;
+    }
+
+    private void updateSecurityStatusUI() {
+        final boolean isEnabled = SecurityService.getInstance().isEnabled();
+        if (isEnabled) {
+            lblSecurityStatus.setText("🛡️ Security: ON");
+            lblSecurityStatus.setStyle("-fx-cursor: hand; -fx-font-weight: bold; -fx-padding: 3px 6px; -fx-background-radius: 3px; -fx-background-color: #2e7d32; -fx-text-fill: #ffffff;");
+            securityWarningBanner.setVisible(false);
+            securityWarningBanner.setManaged(false);
+        } else {
+            lblSecurityStatus.setText("⚠️ Security: OFF");
+            lblSecurityStatus.setStyle("-fx-cursor: hand; -fx-font-weight: bold; -fx-padding: 3px 6px; -fx-background-radius: 3px; -fx-background-color: #d32f2f; -fx-text-fill: #ffffff;");
+            securityWarningBanner.setVisible(true);
+            securityWarningBanner.setManaged(true);
+        }
+    }
+
+    private void appendSystemInfoMessage(final String text) {
+        final VBox bubble = new VBox();
+        bubble.getStyleClass().addAll("chat-message-container", "assistant-message");
+        bubble.setStyle("-fx-background-color: #2b2d30; -fx-border-color: #ff9800; -fx-border-width: 0 0 0 3px;");
+
+        final Label header = new Label("System - Security Notification");
+        header.getStyleClass().add("message-header");
+        header.setStyle("-fx-text-fill: #ff9800;");
+
+        final Label body = new Label(text);
+        body.setWrapText(true);
+        body.getStyleClass().add("message-body");
+        body.setStyle("-fx-text-fill: #e0e0e0; -fx-font-style: italic;");
+
+        bubble.getChildren().addAll(header, body);
+        messagesBox.getChildren().add(bubble);
+    }
+
+    @FXML
+    private void handleOpenSecuritySettings() {
+        try {
+            final javafx.fxml.FXMLLoader loader = new javafx.fxml.FXMLLoader(getClass().getResource("/net/hero/genai/fxml/SecuritySettings.fxml"));
+            final javafx.scene.Parent root = loader.load();
+            final javafx.stage.Stage stage = new javafx.stage.Stage();
+            stage.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+            stage.setTitle("セキュリティマネージャ設定");
+            stage.setScene(new javafx.scene.Scene(root, 700, 550));
+
+            // Refresh audit logs when opening
+            final SecuritySettingsController controller = loader.getController();
+            if (controller != null) {
+                controller.refreshAuditLogs();
+            }
+
+            stage.showAndWait();
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "Failed to load SecuritySettings.fxml", e);
+        }
+    }
+
+    @FXML
+    private void handleQuickEnableSecurity() {
+        SecurityService.getInstance().setEnabled(true);
     }
 }
