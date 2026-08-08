@@ -20,7 +20,17 @@
             <children>
                 <Label style="-fx-font-weight: bold; -fx-text-fill: #858585; -fx-font-size: 11px;" text="AI CHAT" />
                 <Pane HBox.hgrow="ALWAYS" />
+                <Label fx:id="lblSecurityStatus" onMouseClicked="#handleOpenSecuritySettings" style="-fx-cursor: hand; -fx-font-weight: bold; -fx-padding: 3px 6px; -fx-background-radius: 3px;" text="🛡️ Security: ON" />
                 <Button fx:id="btnOllamaConfig" mnemonicParsing="false" onAction="#handleToggleConfig" styleClass="button-secondary" text="Ollama Settings" />
+            </children>
+        </HBox>
+
+        <!-- Security Warning Banner -->
+        <HBox fx:id="securityWarningBanner" alignment="CENTER_LEFT" managed="false" spacing="10.0" style="-fx-background-color: #d32f2f; -fx-padding: 6px 12px; -fx-background-radius: 3px;" visible="false">
+            <children>
+                <Label style="-fx-text-fill: #ffffff; -fx-font-weight: bold; -fx-font-size: 11px;" text="⚠️ セキュリティ制限が無効化されています" HBox.hgrow="ALWAYS" />
+                <Pane HBox.hgrow="ALWAYS" />
+                <Button onAction="#handleQuickEnableSecurity" style="-fx-background-color: #ffffff; -fx-text-fill: #d32f2f; -fx-font-weight: bold; -fx-padding: 3px 6px; -fx-font-size: 11px; -fx-cursor: hand;" text="今すぐ有効に戻す" />
             </children>
         </HBox>
 

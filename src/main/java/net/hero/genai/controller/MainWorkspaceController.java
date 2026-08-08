@@ -52,6 +52,7 @@ public final class MainWorkspaceController {
     }
 
     public void notifyWorkspaceSelected(final java.io.File directory) {
+        net.hero.genai.service.SecurityService.getInstance().setActiveWorkspace(directory);
         if (gitPanelController != null) {
             gitPanelController.setWorkspaceDirectory(directory);
         }
