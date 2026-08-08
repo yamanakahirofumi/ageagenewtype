@@ -14,6 +14,7 @@
 
 ## 2. 機能・仕様 (`docs/features/`)
 - [仕様書](features/Specifications.md)：プロジェクト概要、主要機能、UI/UX の概要
+- [ワークフロー機能仕様書](features/Workflow-Specification.md)：AIの回答品質を高めるための定義済み・動的ワークフローと「出力の後は必ず検証」原則に関する仕様
 - [エージェント・セキュリティマネージャ仕様書](features/Agent-Security-Manager.md)：AIエージェントの安全な実行制限に関する仕様（ファイル、外部実行、HTTP）
 - [エージェント・セキュリティマネージャGUI仕様書](features/Agent-Security-Manager-GUI-Specification.md)：セキュリティ制限、バイパス設定、警告表示、監査ログ表示などのGUI設計仕様
 - [Git操作GUI仕様書](features/Git-Control-Specification.md)：GUIからGit操作（init, fetch, pull, commit, push, checkout, branch作成）を行うための機能仕様
