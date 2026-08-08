@@ -37,8 +37,21 @@
     <center>
         <SplitPane fx:id="mainSplitPane" dividerPositions="0.2, 0.6" prefHeight="160.0" prefWidth="200.0" BorderPane.alignment="CENTER">
             <items>
-                <!-- Left Pane: File Tree -->
-                <fx:include fx:id="fileTree" source="FileTree.fxml" />
+                <!-- Left Pane: TabPane with File Tree and Git Operations -->
+                <javafx.scene.control.TabPane fx:id="leftTabPane" tabClosingPolicy="UNAVAILABLE">
+                    <tabs>
+                        <javafx.scene.control.Tab text="Files">
+                            <content>
+                                <fx:include fx:id="fileTree" source="FileTree.fxml" />
+                            </content>
+                        </javafx.scene.control.Tab>
+                        <javafx.scene.control.Tab text="Git">
+                            <content>
+                                <fx:include fx:id="gitPanel" source="GitPanel.fxml" />
+                            </content>
+                        </javafx.scene.control.Tab>
+                    </tabs>
+                </javafx.scene.control.TabPane>
 
                 <!-- Center Pane: Editor -->
                 <fx:include fx:id="editor" source="Editor.fxml" />
@@ -54,6 +67,8 @@
                 <Label fx:id="statusOllamaLabel" text="Ollama: Offline" />
                 <Separator orientation="VERTICAL" />
                 <Label fx:id="statusModelLabel" text="Model: None" />
+                <Separator orientation="VERTICAL" />
+                <Label fx:id="statusGitLabel" text="⚠️ No Git Repo" style="-fx-cursor: hand;" onMouseClicked="#handleGitWidgetClick" />
                 <Pane HBox.hgrow="ALWAYS" />
                 <Label text="UTF-8" />
                 <Separator orientation="VERTICAL" />

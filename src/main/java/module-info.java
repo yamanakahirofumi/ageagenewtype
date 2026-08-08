@@ -8,6 +8,7 @@ module net.hero.genai {
     requires langchain4j;
     requires langchain4j.ollama;
     requires langchain4j.core;
+    requires org.eclipse.jgit;
 
     exports net.hero.genai;
     exports net.hero.genai.model;

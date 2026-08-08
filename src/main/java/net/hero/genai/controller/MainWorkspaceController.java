@@ -27,6 +27,10 @@ public final class MainWorkspaceController {
     @FXML private FileTreeController fileTreeController;
     @FXML private EditorController editorController;
     @FXML private ChatController chatViewController;
+    @FXML private GitController gitPanelController;
+
+    @FXML private javafx.scene.control.TabPane leftTabPane;
+    @FXML private Label statusGitLabel;
 
     @FXML
     public void initialize() {
@@ -41,6 +45,52 @@ public final class MainWorkspaceController {
         }
         if (chatViewController != null) {
             chatViewController.setMainWorkspaceController(this);
+        }
+        if (gitPanelController != null) {
+            gitPanelController.setMainWorkspaceController(this);
+        }
+    }
+
+    public void notifyWorkspaceSelected(final java.io.File directory) {
+        if (gitPanelController != null) {
+            gitPanelController.setWorkspaceDirectory(directory);
+        }
+    }
+
+    public void refreshFileTree() {
+        if (fileTreeController != null && fileTreeController.getWorkspaceDirectory() != null) {
+            fileTreeController.loadWorkspace(fileTreeController.getWorkspaceDirectory());
+        }
+    }
+
+    public void updateGitWidget(final net.hero.genai.model.GitStatus status) {
+        javafx.application.Platform.runLater(() -> {
+            if ("No Git Repo".equals(status.branchName())) {
+                statusGitLabel.setText("⚠️ No Git Repo");
+            } else {
+                final StringBuilder sb = new StringBuilder("🌿 ");
+                sb.append(status.branchName());
+                if (status.aheadCount() > 0 || status.behindCount() > 0) {
+                    sb.append(" (");
+                    if (status.aheadCount() > 0) {
+                        sb.append("↑").append(status.aheadCount());
+                    }
+                    if (status.behindCount() > 0) {
+                        if (status.aheadCount() > 0) sb.append(" ");
+                        sb.append("↓").append(status.behindCount());
+                    }
+                    sb.append(")");
+                }
+                statusGitLabel.setText(sb.toString());
+            }
+        });
+    }
+
+    @FXML
+    private void handleGitWidgetClick() {
+        if (leftTabPane != null) {
+            // Select the second tab (Git Panel)
+            leftTabPane.getSelectionModel().select(1);
         }
     }
 
