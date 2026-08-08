@@ -81,13 +81,24 @@ public final class FileTreeController {
         }
     }
 
+    private File workspaceDirectory;
+
+    public File getWorkspaceDirectory() {
+        return workspaceDirectory;
+    }
+
     public void loadWorkspace(final File directory) {
         LOGGER.log(Level.INFO, "Loading workspace directory: " + directory.getAbsolutePath());
+        this.workspaceDirectory = directory;
         lblWorkspacePath.setText(directory.getAbsolutePath());
 
         final TreeItem<WorkspaceFile> rootItem = buildTreeNodes(new WorkspaceFile(directory));
         rootItem.setExpanded(true);
         treeView.setRoot(rootItem);
+
+        if (mainWorkspaceController != null) {
+            mainWorkspaceController.notifyWorkspaceSelected(directory);
+        }
     }
 
     private TreeItem<WorkspaceFile> buildTreeNodes(final WorkspaceFile workspaceFile) {
