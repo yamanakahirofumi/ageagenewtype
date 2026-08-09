@@ -220,44 +220,159 @@ public final class ChatController {
             return;
         }
 
-        Workflow matched = service.matchWorkflow(promptText);
-        if (matched != null) {
-            service.startWorkflow(matched);
-            appendSystemInfoMessage("Predefined workflow matched: " + matched.name() + ". Starting now...");
-            updateWorkflowPanelUI();
-            runActiveWorkflowStep();
-            return;
-        }
+        // Run Workflow Determination / Information Gathering Session
+        runWorkflowDetermination(promptText);
+    }
 
-        boolean isTaskRequest = promptText.length() > 5 && (
-            promptText.contains("create") || promptText.contains("make") || promptText.contains("implement") ||
-            promptText.contains("build") || promptText.contains("design") || promptText.contains("refactor") ||
-            promptText.contains("修正") || promptText.contains("作成") || promptText.contains("検証") ||
-            promptText.contains("機能") || promptText.contains("実装") || promptText.contains("設計") ||
-            promptText.contains("コード") || promptText.contains("テスト")
-        );
+    private void runWorkflowDetermination(final String promptText) {
+        btnSend.setDisable(true);
 
-        if (isTaskRequest) {
-            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
-            final String activeModel = chatSession.getSelectedModel();
-            appendSystemInfoMessage("No predefined workflow matched. Analyzing task and generating custom workflow...");
+        final Message userMsg = new Message("user", promptText, LocalDateTime.now());
+        chatSession.addMessage(userMsg);
+        appendMessageUI(userMsg);
 
-            service.generateDynamicWorkflow(promptText, baseUrl, activeModel, apiService, (wf) -> {
-                if (wf != null) {
-                    service.setProposedWorkflow(wf);
-                    updateWorkflowPanelUI();
-                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+        final VBox aiBubble = createMessageBubbleContainer("assistant");
+        final Label header = new Label("AI Assistant (Analyzing Request...)");
+        header.getStyleClass().add("message-header");
+        final TextArea body = createSelectableTextArea("...", "assistant-message-body");
+        aiBubble.getChildren().addAll(header, body);
+        messagesBox.getChildren().add(aiBubble);
+
+        final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+        final String activeModel = chatSession.getSelectedModel();
+
+        WorkflowService service = WorkflowService.getInstance();
+        service.determineWorkflow(promptText, baseUrl, activeModel, apiService, (result) -> {
+            Platform.runLater(() -> {
+                btnSend.setDisable(false);
+                if (result == null) {
+                    body.setText("Error determining workflow. Proceeding with standard chat.");
+                    executeStandardChatAfterDetermination(promptText);
+                    return;
+                }
+
+                // Add to determination history
+                service.getDeterminationHistoryWritable().add(userMsg);
+
+                if ("GATHERING".equalsIgnoreCase(result.status())) {
+                    body.setText(result.message());
+                    final Message assistantMsg = new Message("assistant", result.message(), LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+                    service.getDeterminationHistoryWritable().add(assistantMsg);
                 } else {
-                    Platform.runLater(() -> {
-                        appendSystemInfoMessage("Failed to generate dynamic workflow. Proceeding with standard single-turn conversation.");
-                        executeStandardChat(promptText);
-                    });
+                    body.setText(result.message());
+                    final Message assistantMsg = new Message("assistant", result.message(), LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+
+                    // Build consolidated user request from determination history
+                    StringBuilder consolidatedRequest = new StringBuilder();
+                    consolidatedRequest.append("=== CONSOLIDATED REQUEST FROM INFORMATION GATHERING ===\n");
+                    for (Message msg : service.getDeterminationHistory()) {
+                        consolidatedRequest.append("[").append(msg.role().toUpperCase()).append("]: ").append(msg.content()).append("\n");
+                    }
+                    final String finalUserRequest = consolidatedRequest.toString();
+
+                    service.clearDeterminationHistory();
+
+                    String decision = result.decision();
+                    if ("standard".equalsIgnoreCase(decision) || decision == null) {
+                        appendSystemInfoMessage("Decision: Standard Chat. Executing now...");
+                        executeStandardChatAfterDetermination(promptText);
+                    } else if ("dynamic".equalsIgnoreCase(decision)) {
+                        appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
+                        service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
+                            if (wf != null) {
+                                service.setProposedWorkflow(wf);
+                                service.setPendingUserRequest(finalUserRequest);
+                                Platform.runLater(() -> {
+                                    updateWorkflowPanelUI();
+                                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+                                });
+                            } else {
+                                Platform.runLater(() -> {
+                                    appendSystemInfoMessage("Failed to generate dynamic workflow. Falling back to standard chat.");
+                                    executeStandardChatAfterDetermination(promptText);
+                                });
+                            }
+                        });
+                    } else {
+                        Workflow matched = null;
+                        for (Workflow wf : service.getPredefinedWorkflows()) {
+                            if (wf.id().equals(decision)) {
+                                matched = wf;
+                                break;
+                            }
+                        }
+                        if (matched != null) {
+                            service.startWorkflow(matched, finalUserRequest);
+                            appendSystemInfoMessage("Workflow matched: " + matched.name() + ". Starting now...");
+                            updateWorkflowPanelUI();
+                            runActiveWorkflowStep();
+                        } else {
+                            appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Falling back to standard chat.");
+                            executeStandardChatAfterDetermination(promptText);
+                        }
+                    }
                 }
             });
-            return;
+        });
+    }
+
+    private void executeStandardChatAfterDetermination(final String promptText) {
+        btnSend.setDisable(true);
+
+        String finalPrompt = promptText;
+        if (currentContextFile != null && mainWorkspaceController != null) {
+            final String fileContent = mainWorkspaceController.getActiveEditorContent();
+            finalPrompt = "[File Context: " + currentContextFile.getName() + "]\n" +
+                    "```\n" + fileContent + "\n```\n\n" +
+                    "User Question:\n" + promptText;
         }
 
-        executeStandardChat(promptText);
+        final VBox aiBubble = createMessageBubbleContainer("assistant");
+        final Label header = new Label("AI Assistant (" + chatSession.getSelectedModel() + ")");
+        header.getStyleClass().add("message-header");
+        final TextArea body = createSelectableTextArea("...", "assistant-message-body");
+        aiBubble.getChildren().addAll(header, body);
+        messagesBox.getChildren().add(aiBubble);
+
+        final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+        final String activeModel = chatSession.getSelectedModel();
+
+        final StringBuilder responseBuilder = new StringBuilder();
+
+        apiService.chatStream(baseUrl, activeModel, finalPrompt, new ChatStreamListener() {
+            @Override
+            public void onNext(String token) {
+                Platform.runLater(() -> {
+                    if (responseBuilder.length() == 0) {
+                        body.setText("");
+                    }
+                    responseBuilder.append(token);
+                    body.setText(responseBuilder.toString());
+                });
+            }
+
+            @Override
+            public void onComplete(String fullResponse) {
+                Platform.runLater(() -> {
+                    final Message assistantMsg = new Message("assistant", fullResponse, LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+                    btnSend.setDisable(false);
+                });
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                Platform.runLater(() -> {
+                    body.setText("Error occurred: " + error.getMessage());
+                    body.setStyle("-fx-text-fill: #f44336;");
+                    final Message errorMsg = new Message("assistant", "Error: " + error.getMessage(), LocalDateTime.now());
+                    chatSession.addMessage(errorMsg);
+                    btnSend.setDisable(false);
+                });
+            }
+        });
     }
 
     private void executeStandardChat(final String promptText) {
@@ -416,7 +531,12 @@ public final class ChatController {
         WorkflowService service = WorkflowService.getInstance();
         Workflow proposed = service.getProposedWorkflow();
         if (proposed != null) {
-            service.startWorkflow(proposed);
+            String pendingReq = service.getPendingUserRequest();
+            if (pendingReq == null || pendingReq.isEmpty()) {
+                pendingReq = "Implement user request";
+            }
+            service.startWorkflow(proposed, pendingReq);
+            service.clearPendingUserRequest();
             updateWorkflowPanelUI();
             appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
             runActiveWorkflowStep();
