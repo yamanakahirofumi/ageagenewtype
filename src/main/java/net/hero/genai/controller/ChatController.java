@@ -264,11 +264,13 @@ public final class ChatController {
                     final Message assistantMsg = new Message("assistant", result.message(), LocalDateTime.now());
                     chatSession.addMessage(assistantMsg);
 
-                    // Build consolidated user request from determination history
+                    // Build consolidated user request from user's responses in determination history
                     StringBuilder consolidatedRequest = new StringBuilder();
-                    consolidatedRequest.append("=== CONSOLIDATED REQUEST FROM INFORMATION GATHERING ===\n");
+                    consolidatedRequest.append("=== USER REQUEST DETAILS ===\n");
                     for (Message msg : service.getDeterminationHistory()) {
-                        consolidatedRequest.append("[").append(msg.role().toUpperCase()).append("]: ").append(msg.content()).append("\n");
+                        if ("user".equalsIgnoreCase(msg.role())) {
+                            consolidatedRequest.append("- ").append(msg.content()).append("\n");
+                        }
                     }
                     final String finalUserRequest = consolidatedRequest.toString();
 
@@ -277,7 +279,7 @@ public final class ChatController {
                     String decision = result.decision();
                     if ("standard".equalsIgnoreCase(decision) || decision == null) {
                         appendSystemInfoMessage("Decision: Standard Chat. Executing now...");
-                        executeStandardChatAfterDetermination(promptText);
+                        executeStandardChatAfterDetermination(finalUserRequest);
                     } else if ("dynamic".equalsIgnoreCase(decision)) {
                         appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
                         service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
@@ -291,7 +293,7 @@ public final class ChatController {
                             } else {
                                 Platform.runLater(() -> {
                                     appendSystemInfoMessage("Failed to generate dynamic workflow. Falling back to standard chat.");
-                                    executeStandardChatAfterDetermination(promptText);
+                                    executeStandardChatAfterDetermination(finalUserRequest);
                                 });
                             }
                         });
@@ -310,7 +312,7 @@ public final class ChatController {
                             runActiveWorkflowStep();
                         } else {
                             appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Falling back to standard chat.");
-                            executeStandardChatAfterDetermination(promptText);
+                            executeStandardChatAfterDetermination(finalUserRequest);
                         }
                     }
                 }
