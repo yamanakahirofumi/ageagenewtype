@@ -1,11 +1,15 @@
 package net.hero.genai.service;
 
+import net.hero.genai.service.WorkspaceAgent;
+import net.hero.genai.service.WorkspaceFileTools;
+
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaStreamingChatModel;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.service.AiServices;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -90,7 +94,7 @@ public final class OllamaApiService {
 
     /**
      * Sends a chat prompt and returns the full response string.
-     * Supports both real Ollama (via LangChain4j) and mock model fallback.
+     * Supports both real Ollama (via LangChain4j AI Services) and mock model fallback.
      */
     public String chat(final String baseUrl, final String modelName, final String prompt) {
         LOGGER.log(Level.INFO, "Chatting with model: " + modelName + " at " + baseUrl);
@@ -104,7 +108,13 @@ public final class OllamaApiService {
                     .modelName(modelName)
                     .timeout(Duration.ofSeconds(60))
                     .build();
-            return model.generate(prompt);
+
+            final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
+                    .chatLanguageModel(model)
+                    .tools(new WorkspaceFileTools())
+                    .build();
+
+            return agent.chat(prompt);
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error calling LangChain4j OllamaChatModel", e);
             return "Error: Failed to communicate with local Ollama server. (" + e.getMessage() + ")";
@@ -113,7 +123,7 @@ public final class OllamaApiService {
 
     /**
      * Sends a streaming chat prompt. The provided listener receives tokens in real-time.
-     * Supports both real Ollama (via LangChain4j) and mock streaming fallback.
+     * Supports both real Ollama (via LangChain4j AI Services) and mock streaming fallback.
      */
     public void chatStream(final String baseUrl, final String modelName, final String prompt, final ChatStreamListener listener) {
         LOGGER.log(Level.INFO, "Streaming chat with model: " + modelName + " at " + baseUrl);
@@ -129,25 +139,16 @@ public final class OllamaApiService {
                     .timeout(Duration.ofSeconds(60))
                     .build();
 
-            model.generate(prompt, new dev.langchain4j.model.StreamingResponseHandler<AiMessage>() {
-                private final StringBuilder responseBuilder = new StringBuilder();
+            final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
+                    .streamingChatLanguageModel(model)
+                    .tools(new WorkspaceFileTools())
+                    .build();
 
-                @Override
-                public void onNext(String token) {
-                    responseBuilder.append(token);
-                    listener.onNext(token);
-                }
-
-                @Override
-                public void onComplete(Response<AiMessage> response) {
-                    listener.onComplete(responseBuilder.toString());
-                }
-
-                @Override
-                public void onError(Throwable error) {
-                    listener.onError(error);
-                }
-            });
+            agent.chatStream(prompt)
+                    .onNext(listener::onNext)
+                    .onComplete(response -> listener.onComplete(response.content().text()))
+                    .onError(listener::onError)
+                    .start();
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "Error calling LangChain4j OllamaStreamingChatModel", e);
             listener.onError(e);
