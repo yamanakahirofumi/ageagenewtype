@@ -5,9 +5,11 @@ import javafx.fxml.FXML;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.beans.binding.Bindings;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.input.KeyCode;
+import javafx.scene.text.Text;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import net.hero.genai.model.ChatSession;
@@ -276,9 +278,7 @@ public final class ChatController {
         final VBox aiBubble = createMessageBubbleContainer("assistant");
         final Label header = new Label("AI Assistant (" + chatSession.getSelectedModel() + ")");
         header.getStyleClass().add("message-header");
-        final Label body = new Label("...");
-        body.setWrapText(true);
-        body.getStyleClass().add("message-body");
+        final TextArea body = createSelectableTextArea("...", "assistant-message-body");
         aiBubble.getChildren().addAll(header, body);
         messagesBox.getChildren().add(aiBubble);
 
@@ -453,9 +453,7 @@ public final class ChatController {
             final VBox aiBubble = createMessageBubbleContainer("assistant");
             final Label header = new Label("AI Assistant [Workflow: " + step.name() + "]");
             header.getStyleClass().add("message-header");
-            final Label body = new Label("Running step...");
-            body.setWrapText(true);
-            body.getStyleClass().add("message-body");
+            final TextArea body = createSelectableTextArea("Running step...", "assistant-message-body");
             aiBubble.getChildren().addAll(header, body);
             messagesBox.getChildren().add(aiBubble);
 
@@ -511,9 +509,8 @@ public final class ChatController {
         final Label header = new Label(displayName + " - " + message.timestamp().toString().substring(11, 19));
         header.getStyleClass().add("message-header");
 
-        final Label body = new Label(message.content());
-        body.setWrapText(true);
-        body.getStyleClass().add("message-body");
+        final String bodyClass = "user".equalsIgnoreCase(message.role()) ? "user-message-body" : "assistant-message-body";
+        final TextArea body = createSelectableTextArea(message.content(), bodyClass);
 
         bubble.getChildren().addAll(header, body);
         messagesBox.getChildren().add(bubble);
@@ -528,6 +525,37 @@ public final class ChatController {
             container.getStyleClass().add("assistant-message");
         }
         return container;
+    }
+
+    private TextArea createSelectableTextArea(final String text, final String typeClass) {
+        final TextArea textArea = new TextArea(text);
+        textArea.setEditable(false);
+        textArea.setWrapText(true);
+        textArea.getStyleClass().addAll("selectable-chat-body", typeClass);
+
+        // Create a hidden Text node to measure the text height dynamically
+        final Text helper = new Text();
+        helper.textProperty().bind(textArea.textProperty());
+        helper.fontProperty().bind(textArea.fontProperty());
+
+        // Bind helper's wrapping width to TextArea's width minus some padding.
+        // If textArea's width is 0 or very small initially, use a reasonable default.
+        helper.wrappingWidthProperty().bind(Bindings.createDoubleBinding(() -> {
+            double w = textArea.getWidth();
+            return w > 24.0 ? w - 24.0 : 350.0;
+        }, textArea.widthProperty()));
+
+        // Bind textArea's prefHeight to the helper's height plus a small buffer.
+        textArea.prefHeightProperty().bind(Bindings.createDoubleBinding(() -> {
+            double h = helper.getLayoutBounds().getHeight();
+            // A small padding to prevent vertical scrollbars and clipping
+            return h + 12.0;
+        }, helper.layoutBoundsProperty(), textArea.widthProperty()));
+
+        // Set minHeight to prevent any collapse
+        textArea.setMinHeight(20.0);
+
+        return textArea;
     }
 
     private void updateSecurityStatusUI() {
@@ -554,10 +582,7 @@ public final class ChatController {
         header.getStyleClass().add("message-header");
         header.setStyle("-fx-text-fill: #ff9800;");
 
-        final Label body = new Label(text);
-        body.setWrapText(true);
-        body.getStyleClass().add("message-body");
-        body.setStyle("-fx-text-fill: #e0e0e0; -fx-font-style: italic;");
+        final TextArea body = createSelectableTextArea(text, "system-message-body");
 
         bubble.getChildren().addAll(header, body);
         messagesBox.getChildren().add(bubble);

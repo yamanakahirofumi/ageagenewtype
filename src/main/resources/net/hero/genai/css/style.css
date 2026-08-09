@@ -164,3 +164,45 @@
     -fx-padding: 4px 0 0 0;
     -fx-text-fill: #cccccc;
 }
+
+/* Selectable and copyable chat message TextArea styles */
+.selectable-chat-body {
+    -fx-background-color: transparent !important;
+    -fx-background-insets: 0 !important;
+    -fx-border-color: transparent !important;
+    -fx-font-family: "Segoe UI", -apple-system, sans-serif;
+    -fx-font-size: 13px;
+    -fx-padding: 0 !important;
+}
+
+.selectable-chat-body:focused {
+    -fx-background-color: transparent !important;
+    -fx-background-insets: 0 !important;
+    -fx-border-color: transparent !important;
+}
+
+.selectable-chat-body .scroll-pane {
+    -fx-hbar-policy: NEVER !important;
+    -fx-vbar-policy: NEVER !important;
+    -fx-background-color: transparent !important;
+}
+
+.selectable-chat-body .viewport,
+.selectable-chat-body .content {
+    -fx-background-color: transparent !important;
+    -fx-padding: 0 !important;
+}
+
+/* Specific text colors and fonts for different message types */
+.user-message-body {
+    -fx-text-fill: #cccccc;
+}
+
+.assistant-message-body {
+    -fx-text-fill: #cccccc;
+}
+
+.system-message-body {
+    -fx-text-fill: #e0e0e0;
+    -fx-font-style: italic;
+}
