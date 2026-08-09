@@ -1,7 +1,6 @@
 package net.hero.genai.service;
 
 import net.hero.genai.service.WorkspaceAgent;
-import net.hero.genai.service.WorkspaceFileTools;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
@@ -111,7 +110,6 @@ public final class OllamaApiService {
 
             final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
                     .chatLanguageModel(model)
-                    .tools(new WorkspaceFileTools())
                     .build();
 
             return agent.chat(prompt);
@@ -141,7 +139,6 @@ public final class OllamaApiService {
 
             final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
                     .streamingChatLanguageModel(model)
-                    .tools(new WorkspaceFileTools())
                     .build();
 
             agent.chatStream(prompt)
