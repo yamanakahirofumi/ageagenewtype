@@ -196,6 +196,8 @@ public final class ChatController {
     private void handleClearHistory() {
         chatSession.clear();
         messagesBox.getChildren().clear();
+        WorkflowService.getInstance().setStandardChatMode(false);
+        WorkflowService.getInstance().clearDeterminationHistory();
         LOGGER.log(Level.INFO, "Cleared chat history.");
     }
 
@@ -217,6 +219,11 @@ public final class ChatController {
                 service.getStepOutputs().set(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
                 runActiveWorkflowStep();
             }
+            return;
+        }
+
+        if (service.isStandardChatMode()) {
+            executeStandardChat(promptText);
             return;
         }
 
@@ -279,6 +286,7 @@ public final class ChatController {
                     String decision = result.decision();
                     if ("standard".equalsIgnoreCase(decision) || decision == null) {
                         appendSystemInfoMessage("Decision: Standard Chat. Executing now...");
+                        service.setStandardChatMode(true);
                         executeStandardChatAfterDetermination(finalUserRequest);
                     } else if ("dynamic".equalsIgnoreCase(decision)) {
                         appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");

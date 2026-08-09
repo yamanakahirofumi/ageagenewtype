@@ -41,6 +41,7 @@ public final class WorkflowService {
     private final List<Message> determinationHistory = new ArrayList<>();
     private String pendingUserRequest = "";
     private String userRequest = "";
+    private boolean standardChatMode = false;
 
     private WorkflowService() {
         loadBuiltInWorkflows();
@@ -153,6 +154,8 @@ public final class WorkflowService {
             wfListBuilder.append("  Trigger Keywords: ").append(String.join(", ", wf.triggerKeywords())).append("\n\n");
         }
 
+        String targetLanguage = "ja".equals(java.util.Locale.getDefault().getLanguage()) ? "Japanese" : "English";
+
         String systemInstructions = """
             You are a workflow determination agent. Your task is to analyze the user's request and determine the most appropriate workflow to handle it.
             You must output a single, valid JSON object with NO markdown block or surrounding text.
@@ -167,16 +170,16 @@ public final class WorkflowService {
             {
               "status": "DETERMINED" or "GATHERING",
               "decision": "<predefined-workflow-id>" or "dynamic" or "standard" or null,
-              "message": "<polite message in Japanese>"
+              "message": "<polite message in %s>"
             }
 
             Rules:
-            1. If you can make a clear and confident decision immediately from the user's message(s), set "status" to "DETERMINED", "decision" to the chosen option, and "message" to a brief Japanese confirmation message.
-            2. If the request is vague, ambiguous, or lacks crucial details to choose a workflow, set "status" to "GATHERING", "decision" to null, and write a polite clarifying question in Japanese in "message" to ask the user for clarification.
+            1. If you can make a clear and confident decision immediately from the user's message(s), set "status" to "DETERMINED", "decision" to the chosen option, and "message" to a brief %s confirmation message.
+            2. If the request is vague, ambiguous, or lacks crucial details to choose a workflow, set "status" to "GATHERING", "decision" to null, and write a polite clarifying question in %s in "message" to ask the user for clarification.
             3. Do not assume or jump to a predefined workflow or "dynamic" if there is too much ambiguity; ask first.
             4. If the user clarifies and a decision can be made, transition to "DETERMINED".
-            5. Always respond in Japanese for the "message" field.
-            """.formatted(wfListBuilder.toString());
+            5. Always respond in %s for the "message" field.
+            """.formatted(wfListBuilder.toString(), targetLanguage, targetLanguage, targetLanguage, targetLanguage);
 
         StringBuilder conversationBuilder = new StringBuilder();
         conversationBuilder.append("=== CONVERSATION HISTORY ===\n");
@@ -286,11 +289,20 @@ public final class WorkflowService {
         this.userRequest = userRequest;
     }
 
+    public boolean isStandardChatMode() {
+        return standardChatMode;
+    }
+
+    public void setStandardChatMode(boolean standardChatMode) {
+        this.standardChatMode = standardChatMode;
+    }
+
     /**
      * Starts execution of a workflow with a user request.
      */
     public void startWorkflow(Workflow workflow, String userRequest) {
         this.activeWorkflow = workflow;
+        this.standardChatMode = false;
         this.userRequest = userRequest != null ? userRequest : "";
         this.currentStepIndex = -1;
         this.stepStatuses.clear();
@@ -322,6 +334,7 @@ public final class WorkflowService {
         this.pendingUserRequest = "";
         this.userRequest = "";
         this.determinationHistory.clear();
+        this.standardChatMode = false;
         LOGGER.log(Level.INFO, "Workflow canceled.");
     }
 
