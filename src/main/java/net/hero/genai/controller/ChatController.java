@@ -13,9 +13,12 @@ import javafx.scene.layout.VBox;
 import net.hero.genai.model.ChatSession;
 import net.hero.genai.model.Message;
 import net.hero.genai.model.WorkspaceFile;
+import net.hero.genai.model.Workflow;
+import net.hero.genai.model.WorkflowStepStatus;
 import net.hero.genai.service.OllamaApiService;
 import net.hero.genai.service.ChatStreamListener;
 import net.hero.genai.service.SecurityService;
+import net.hero.genai.service.WorkflowService;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -39,6 +42,15 @@ public final class ChatController {
     @FXML private Button btnSend;
     @FXML private Label lblSecurityStatus;
     @FXML private HBox securityWarningBanner;
+
+    @FXML private VBox workflowPanel;
+    @FXML private Label lblWorkflowTitle;
+    @FXML private Label lblWorkflowDesc;
+    @FXML private VBox workflowStepsContainer;
+    @FXML private HBox workflowProposalActions;
+    @FXML private Button btnApproveWorkflow;
+    @FXML private Button btnRejectWorkflow;
+    @FXML private Button btnCancelWorkflow;
 
     // Injected child controller for OllamaConfig
     @FXML private OllamaConfigController ollamaConfigController;
@@ -193,9 +205,62 @@ public final class ChatController {
         }
 
         txtPrompt.clear();
+
+        WorkflowService service = WorkflowService.getInstance();
+        if (service.getActiveWorkflow() != null) {
+            appendSystemInfoMessage("Interaction within workflow: " + promptText);
+            int idx = service.getCurrentStepIndex();
+            if (idx >= 0) {
+                String oldOutput = service.getStepOutputs().get(idx);
+                service.getStepOutputs().set(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
+                runActiveWorkflowStep();
+            }
+            return;
+        }
+
+        Workflow matched = service.matchWorkflow(promptText);
+        if (matched != null) {
+            service.startWorkflow(matched);
+            appendSystemInfoMessage("Predefined workflow matched: " + matched.name() + ". Starting now...");
+            updateWorkflowPanelUI();
+            runActiveWorkflowStep();
+            return;
+        }
+
+        boolean isTaskRequest = promptText.length() > 5 && (
+            promptText.contains("create") || promptText.contains("make") || promptText.contains("implement") ||
+            promptText.contains("build") || promptText.contains("design") || promptText.contains("refactor") ||
+            promptText.contains("修正") || promptText.contains("作成") || promptText.contains("検証") ||
+            promptText.contains("機能") || promptText.contains("実装") || promptText.contains("設計") ||
+            promptText.contains("コード") || promptText.contains("テスト")
+        );
+
+        if (isTaskRequest) {
+            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+            final String activeModel = chatSession.getSelectedModel();
+            appendSystemInfoMessage("No predefined workflow matched. Analyzing task and generating custom workflow...");
+
+            service.generateDynamicWorkflow(promptText, baseUrl, activeModel, apiService, (wf) -> {
+                if (wf != null) {
+                    service.setProposedWorkflow(wf);
+                    updateWorkflowPanelUI();
+                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+                } else {
+                    Platform.runLater(() -> {
+                        appendSystemInfoMessage("Failed to generate dynamic workflow. Proceeding with standard single-turn conversation.");
+                        executeStandardChat(promptText);
+                    });
+                }
+            });
+            return;
+        }
+
+        executeStandardChat(promptText);
+    }
+
+    private void executeStandardChat(final String promptText) {
         btnSend.setDisable(true);
 
-        // Build prompt with context if present
         String finalPrompt = promptText;
         if (currentContextFile != null && mainWorkspaceController != null) {
             final String fileContent = mainWorkspaceController.getActiveEditorContent();
@@ -204,12 +269,10 @@ public final class ChatController {
                     "User Question:\n" + promptText;
         }
 
-        // Add user message to session & UI
         final Message userMsg = new Message("user", promptText, LocalDateTime.now());
         chatSession.addMessage(userMsg);
         appendMessageUI(userMsg);
 
-        // Set up placeholder/empty container for streaming AI message
         final VBox aiBubble = createMessageBubbleContainer("assistant");
         final Label header = new Label("AI Assistant (" + chatSession.getSelectedModel() + ")");
         header.getStyleClass().add("message-header");
@@ -224,13 +287,12 @@ public final class ChatController {
 
         final StringBuilder responseBuilder = new StringBuilder();
 
-        // Call streaming service
         apiService.chatStream(baseUrl, activeModel, finalPrompt, new ChatStreamListener() {
             @Override
             public void onNext(String token) {
                 Platform.runLater(() -> {
                     if (responseBuilder.length() == 0) {
-                        body.setText(""); // clear "..." placeholder
+                        body.setText("");
                     }
                     responseBuilder.append(token);
                     body.setText(responseBuilder.toString());
@@ -256,6 +318,189 @@ public final class ChatController {
                     btnSend.setDisable(false);
                 });
             }
+        });
+    }
+
+    private void updateWorkflowPanelUI() {
+        Platform.runLater(() -> {
+            WorkflowService service = WorkflowService.getInstance();
+            Workflow active = service.getActiveWorkflow();
+            Workflow proposed = service.getProposedWorkflow();
+
+            if (active != null) {
+                workflowPanel.setVisible(true);
+                workflowPanel.setManaged(true);
+                lblWorkflowTitle.setText("Workflow: " + active.name());
+                lblWorkflowDesc.setText(active.description());
+                btnCancelWorkflow.setVisible(true);
+                workflowProposalActions.setVisible(false);
+                workflowProposalActions.setManaged(false);
+
+                workflowStepsContainer.getChildren().clear();
+                List<WorkflowStepStatus> statuses = service.getStepStatuses();
+                for (int i = 0; i < active.steps().size(); i++) {
+                    net.hero.genai.model.WorkflowStep step = active.steps().get(i);
+                    WorkflowStepStatus status = statuses.get(i);
+
+                    String statusChar = "⚪";
+                    String color = "#858585";
+                    if (status == WorkflowStepStatus.RUNNING) {
+                        statusChar = "🔵";
+                        color = "#007acc";
+                    } else if (status == WorkflowStepStatus.SUCCESS) {
+                        statusChar = "✅";
+                        color = "#2e7d32";
+                    } else if (status == WorkflowStepStatus.FAILED) {
+                        statusChar = "❌";
+                        color = "#f44336";
+                    }
+
+                    HBox hbox = new HBox(8);
+                    hbox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+                    Label lblIcon = new Label(statusChar);
+                    lblIcon.setStyle("-fx-font-weight: bold; -fx-text-fill: " + color + ";");
+
+                    Label lblStep = new Label("P" + step.phase() + ": " + step.name());
+                    lblStep.setStyle("-fx-text-fill: #e0e0e0; -fx-font-weight: bold;");
+
+                    Label lblType = new Label("[" + step.type() + "]");
+                    lblType.setStyle("-fx-text-fill: " + ("verify".equals(step.type()) ? "#e0af68" : "#9ece6a") + "; -fx-font-size: 10px;");
+
+                    hbox.getChildren().addAll(lblIcon, lblStep, lblType);
+                    workflowStepsContainer.getChildren().add(hbox);
+                }
+            } else if (proposed != null) {
+                workflowPanel.setVisible(true);
+                workflowPanel.setManaged(true);
+                lblWorkflowTitle.setText("Proposed Workflow: " + proposed.name());
+                lblWorkflowDesc.setText(proposed.description());
+                btnCancelWorkflow.setVisible(false);
+                workflowProposalActions.setVisible(true);
+                workflowProposalActions.setManaged(true);
+
+                workflowStepsContainer.getChildren().clear();
+                for (int i = 0; i < proposed.steps().size(); i++) {
+                    net.hero.genai.model.WorkflowStep step = proposed.steps().get(i);
+                    HBox hbox = new HBox(8);
+                    hbox.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+
+                    Label lblIcon = new Label("⚪");
+                    lblIcon.setStyle("-fx-text-fill: #858585;");
+
+                    Label lblStep = new Label("P" + step.phase() + ": " + step.name());
+                    lblStep.setStyle("-fx-text-fill: #e0e0e0;");
+
+                    Label lblType = new Label("[" + step.type() + "]");
+                    lblType.setStyle("-fx-text-fill: " + ("verify".equals(step.type()) ? "#e0af68" : "#9ece6a") + "; -fx-font-size: 10px;");
+
+                    hbox.getChildren().addAll(lblIcon, lblStep, lblType);
+                    workflowStepsContainer.getChildren().add(hbox);
+                }
+            } else {
+                workflowPanel.setVisible(false);
+                workflowPanel.setManaged(false);
+            }
+        });
+    }
+
+    @FXML
+    public void handleCancelWorkflow() {
+        WorkflowService.getInstance().cancelWorkflow();
+        updateWorkflowPanelUI();
+        appendSystemInfoMessage("Workflow canceled.");
+    }
+
+    @FXML
+    public void handleApproveWorkflow() {
+        WorkflowService service = WorkflowService.getInstance();
+        Workflow proposed = service.getProposedWorkflow();
+        if (proposed != null) {
+            service.startWorkflow(proposed);
+            updateWorkflowPanelUI();
+            appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
+            runActiveWorkflowStep();
+        }
+    }
+
+    @FXML
+    public void handleRejectWorkflow() {
+        WorkflowService.getInstance().clearProposedWorkflow();
+        updateWorkflowPanelUI();
+        appendSystemInfoMessage("Proposed workflow rejected.");
+    }
+
+    private void runActiveWorkflowStep() {
+        WorkflowService service = WorkflowService.getInstance();
+        if (service.getActiveWorkflow() == null) {
+            return;
+        }
+
+        boolean hasNext = service.advanceStep();
+        if (!hasNext) {
+            appendSystemInfoMessage("Workflow completed successfully!");
+            updateWorkflowPanelUI();
+            return;
+        }
+
+        updateWorkflowPanelUI();
+
+        net.hero.genai.model.WorkflowStep step = service.getActiveWorkflow().steps().get(service.getCurrentStepIndex());
+
+        Platform.runLater(() -> {
+            btnSend.setDisable(true);
+
+            final VBox aiBubble = createMessageBubbleContainer("assistant");
+            final Label header = new Label("AI Assistant [Workflow: " + step.name() + "]");
+            header.getStyleClass().add("message-header");
+            final Label body = new Label("Running step...");
+            body.setWrapText(true);
+            body.getStyleClass().add("message-body");
+            aiBubble.getChildren().addAll(header, body);
+            messagesBox.getChildren().add(aiBubble);
+
+            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+            final String activeModel = chatSession.getSelectedModel();
+
+            final StringBuilder responseBuilder = new StringBuilder();
+
+            service.executeStep(baseUrl, activeModel, apiService, new ChatStreamListener() {
+                @Override
+                public void onNext(String token) {
+                    Platform.runLater(() -> {
+                        if (responseBuilder.length() == 0) {
+                            body.setText("");
+                        }
+                        responseBuilder.append(token);
+                        body.setText(responseBuilder.toString());
+                    });
+                }
+
+                @Override
+                public void onComplete(String fullResponse) {
+                    Platform.runLater(() -> {
+                        final Message assistantMsg = new Message("assistant", fullResponse, LocalDateTime.now());
+                        chatSession.addMessage(assistantMsg);
+                        btnSend.setDisable(false);
+                        updateWorkflowPanelUI();
+                        runActiveWorkflowStep();
+                    });
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    Platform.runLater(() -> {
+                        body.setText("Error occurred during step: " + error.getMessage());
+                        body.setStyle("-fx-text-fill: #f44336;");
+                        final Message errorMsg = new Message("assistant", "Error: " + error.getMessage(), LocalDateTime.now());
+                        chatSession.addMessage(errorMsg);
+                        btnSend.setDisable(false);
+                        updateWorkflowPanelUI();
+                    });
+                }
+            }, () -> {
+                updateWorkflowPanelUI();
+            });
         });
     }
 
