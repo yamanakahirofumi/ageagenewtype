@@ -1,0 +1,61 @@
+{
+  "id": "source-code-creation",
+  "name": "ソースコード作成・修正ワークフロー",
+  "description": "ソースコードを新規作成または修正し、コンパイルや規約、安全性などを多角的に検証する高品質ワークフロー",
+  "trigger_keywords": [
+    "ソースコード",
+    "新規作成",
+    "コード修正",
+    "コード生成",
+    "クラス",
+    "メソッド",
+    "Java",
+    "プログラム",
+    "実装",
+    "修正"
+  ],
+  "steps": [
+    {
+      "phase": 1,
+      "name": "要件・設計の定義",
+      "type": "output",
+      "description": "ユーザーの要望から必要なクラス、メソッド、データ構造、入出力を設計し、設計ドキュメントを出力します。",
+      "verify_step_id": "verify-design"
+    },
+    {
+      "phase": 2,
+      "name": "設計内容の整合性検証",
+      "type": "verify",
+      "description": "作成された設計が既存のアーキテクチャや制約事項と矛盾していないか、エッジケースが考慮されているかをAI自身がセルフチェックします。",
+      "verify_step_id": null
+    },
+    {
+      "phase": 3,
+      "name": "ソースコードの生成・修正",
+      "type": "output",
+      "description": "フェーズ1〜2で確定した設計に基づき、具体的なソースコードを生成または既存コードを修正してファイルに出力します。",
+      "verify_step_id": "verify-code"
+    },
+    {
+      "phase": 4,
+      "name": "ビルドおよびテストによる動作検証",
+      "type": "verify",
+      "description": "実際にビルド（例: `mvn compile`）や単体テスト（例: `mvn test`）を実行、または疑似実行し、エラーがないことを確認します。",
+      "verify_step_id": null
+    },
+    {
+      "phase": 5,
+      "name": "リファクタリングと修正提案",
+      "type": "output",
+      "description": "作成されたコードに対し、可読性向上、エラーハンドリングの強化、冗長なロジックの排除などの改善（リファクタリング）を行った結果を出力します。",
+      "verify_step_id": "verify-convention"
+    },
+    {
+      "phase": 6,
+      "name": "コーディング規約・セキュリティ検証",
+      "type": "verify",
+      "description": "コーディング規約やエージェント・セキュリティマネージャ仕様に違反していないか、脆弱性がないかを静的に検証します。",
+      "verify_step_id": null
+    }
+  ]
+}
