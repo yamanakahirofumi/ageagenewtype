@@ -113,8 +113,8 @@ public final class ChatController {
             chatScrollPane.setVvalue(1.0);
         });
 
-        // Load models asynchronously on startup
-        refreshModels(false);
+        // Test connection and load models asynchronously on startup
+        testConnectionAndLoadModelsOnStartup();
     }
 
     public void setMainWorkspaceController(final MainWorkspaceController controller) {
@@ -195,6 +195,29 @@ public final class ChatController {
                     });
                 });
             }
+        }
+    }
+
+    private void testConnectionAndLoadModelsOnStartup() {
+        if (ollamaConfigController != null) {
+            final String baseUrl = ollamaConfigController.getConfig().getApiBaseUrl();
+            LOGGER.log(Level.INFO, "Testing Ollama connection on startup at " + baseUrl);
+
+            Thread.startVirtualThread(() -> {
+                final boolean connected = apiService.testConnection(baseUrl);
+                final List<String> models = connected ? apiService.fetchAvailableModels(baseUrl) : List.of();
+                Platform.runLater(() -> {
+                    ollamaConfigController.getConfig().setConnected(connected);
+                    ollamaConfigController.updateStatusUI(connected);
+                    if (connected && !models.isEmpty()) {
+                        comboModel.getItems().setAll(models);
+                        comboModel.getSelectionModel().select(0);
+                    }
+                    refreshModels(connected);
+                });
+            });
+        } else {
+            refreshModels(false);
         }
     }
 

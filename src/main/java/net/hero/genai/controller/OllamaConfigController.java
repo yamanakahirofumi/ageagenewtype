@@ -65,7 +65,7 @@ public final class OllamaConfigController {
         });
     }
 
-    private void updateStatusUI(final boolean connected) {
+    void updateStatusUI(final boolean connected) {
         if (connected) {
             lblConnectionStatus.setText("Status: Connected");
             lblConnectionStatus.setStyle("-fx-font-weight: bold; -fx-text-fill: #4caf50;");
