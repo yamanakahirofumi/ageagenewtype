@@ -26,7 +26,7 @@ public final class WorkflowService {
     private static final Logger LOGGER = Logger.getLogger(WorkflowService.class.getName());
     private static final WorkflowService INSTANCE = new WorkflowService();
 
-    public record DeterminationResult(String status, String decision, String message) {}
+    public record DeterminationResult(String status, String decision, String message, boolean fileAccessNeeded, String fileAccessPath) {}
 
     private final List<Workflow> predefinedWorkflows = new ArrayList<>();
     private Workflow activeWorkflow = null;
@@ -170,7 +170,9 @@ public final class WorkflowService {
             {
               "status": "DETERMINED" or "GATHERING",
               "decision": "<predefined-workflow-id>" or "dynamic" or "standard" or null,
-              "message": "<polite message in %s>"
+              "message": "<polite message in %s>",
+              "fileAccessNeeded": true or false,
+              "fileAccessPath": "<relative-path-to-file-if-needed-else-null>"
             }
 
             Rules:
@@ -179,7 +181,8 @@ public final class WorkflowService {
             3. Do not assume or jump to a predefined workflow or "dynamic" if there is too much ambiguity; ask first.
             4. If the user clarifies and a decision can be made, transition to "DETERMINED".
             5. Always respond in %s for the "message" field.
-            """.formatted(wfListBuilder.toString(), targetLanguage, targetLanguage, targetLanguage, targetLanguage);
+            6. If the user request refers to reading, analyzing, or modifying a specific file or directory in the workspace (e.g. "pom.xml", "Main.java", "src/..."), set "fileAccessNeeded" to true and specify the relative file/directory path in "fileAccessPath". Otherwise, set "fileAccessNeeded" to false and "fileAccessPath" to null.
+            """.formatted(wfListBuilder.toString(), targetLanguage, targetLanguage, targetLanguage, targetLanguage, targetLanguage);
 
         StringBuilder conversationBuilder = new StringBuilder();
         conversationBuilder.append("=== CONVERSATION HISTORY ===\n");
@@ -226,7 +229,20 @@ public final class WorkflowService {
         if (decision.isEmpty() || "null".equals(decision)) {
             decision = null;
         }
-        return new DeterminationResult(status, decision, message);
+
+        boolean fileAccessNeeded = false;
+        Pattern boolPattern = Pattern.compile("\"fileAccessNeeded\"\\s*:\\s*(true|false)");
+        Matcher boolMatcher = boolPattern.matcher(json);
+        if (boolMatcher.find()) {
+            fileAccessNeeded = Boolean.parseBoolean(boolMatcher.group(1));
+        }
+
+        String fileAccessPath = extractStringField(json, "fileAccessPath");
+        if (fileAccessPath.isEmpty() || "null".equals(fileAccessPath)) {
+            fileAccessPath = null;
+        }
+
+        return new DeterminationResult(status, decision, message, fileAccessNeeded, fileAccessPath);
     }
 
     public Workflow getActiveWorkflow() {

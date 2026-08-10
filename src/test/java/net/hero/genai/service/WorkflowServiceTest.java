@@ -222,4 +222,40 @@ public final class WorkflowServiceTest {
         assertEquals(wf.steps().size(), service.getStepStatuses().size());
         assertEquals(WorkflowStepStatus.PENDING, service.getStepStatuses().get(0));
     }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with file access needed should parse correctly")
+    public void parseDeterminationResultJson_WithFileAccess_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"DETERMINED\", \"decision\": \"standard\", \"message\": \"pom.xmlを読み込みます。\", \"fileAccessNeeded\": true, \"fileAccessPath\": \"pom.xml\"}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("DETERMINED", result.status());
+        assertEquals("standard", result.decision());
+        assertEquals("pom.xmlを読み込みます。", result.message());
+        assertTrue(result.fileAccessNeeded());
+        assertEquals("pom.xml", result.fileAccessPath());
+    }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with file access not needed should parse correctly")
+    public void parseDeterminationResultJson_WithNoFileAccess_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"GATHERING\", \"decision\": null, \"message\": \"どのようなソースコードを作成しますか？\", \"fileAccessNeeded\": false, \"fileAccessPath\": null}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("GATHERING", result.status());
+        assertNull(result.decision());
+        assertEquals("どのようなソースコードを作成しますか？", result.message());
+        assertFalse(result.fileAccessNeeded());
+        assertNull(result.fileAccessPath());
+    }
 }

@@ -22,6 +22,7 @@ import net.hero.genai.service.ChatStreamListener;
 import net.hero.genai.service.SecurityService;
 import net.hero.genai.service.WorkflowService;
 
+import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -313,6 +314,29 @@ public final class ChatController {
                             consolidatedRequest.append("- ").append(msg.content()).append("\n");
                         }
                     }
+
+                    // Handle file access if requested by the support AI and permitted by SecurityService
+                    if (result.fileAccessNeeded() && result.fileAccessPath() != null) {
+                        File workspaceDir = SecurityService.getInstance().getActiveWorkspace();
+                        if (workspaceDir != null) {
+                            File file = new File(workspaceDir, result.fileAccessPath());
+                            boolean permitted = SecurityService.getInstance().checkPermission("file-access", file.getAbsolutePath(), workspaceDir.getAbsolutePath());
+                            if (permitted && file.exists() && file.isFile()) {
+                                try {
+                                    String fileContent = java.nio.file.Files.readString(file.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                                    consolidatedRequest.append("\n=== FILE CONTEXT ATTACHMENT ===\n");
+                                    consolidatedRequest.append("File: ").append(result.fileAccessPath()).append("\n");
+                                    consolidatedRequest.append("```\n").append(fileContent).append("\n```\n");
+                                    appendSystemInfoMessage("Fetched file context attachment for: " + result.fileAccessPath());
+                                } catch (Exception e) {
+                                    LOGGER.log(Level.WARNING, "Failed to read file for context attachment: " + file.getAbsolutePath(), e);
+                                }
+                            } else if (!permitted) {
+                                appendSystemInfoMessage("Security Block: Access denied for file context: " + result.fileAccessPath());
+                            }
+                        }
+                    }
+
                     final String finalUserRequest = consolidatedRequest.toString();
 
                     service.clearDeterminationHistory();
