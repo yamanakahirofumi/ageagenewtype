@@ -211,6 +211,40 @@ public final class ChatController {
         txtPrompt.clear();
 
         WorkflowService service = WorkflowService.getInstance();
+
+        // Check if the user is asking about the list of available workflows
+        String lowerPrompt = promptText.toLowerCase();
+        boolean isAskingForWorkflows = lowerPrompt.contains("どんなワークフロー")
+                || lowerPrompt.contains("何のワークフロー")
+                || lowerPrompt.contains("ワークフロー一覧")
+                || lowerPrompt.contains("ワークフローの一覧")
+                || lowerPrompt.contains("利用可能なワークフロー")
+                || lowerPrompt.contains("list workflows")
+                || lowerPrompt.contains("show workflows");
+
+        if (isAskingForWorkflows) {
+            final Message userMsg = new Message("user", promptText, LocalDateTime.now());
+            chatSession.addMessage(userMsg);
+            appendMessageUI(userMsg);
+
+            StringBuilder response = new StringBuilder();
+            response.append("利用可能なワークフローの一覧は以下の通りです：\n\n");
+            for (Workflow wf : service.getPredefinedWorkflows()) {
+                response.append("■ ").append(wf.name()).append(" (ID: ").append(wf.id()).append(")\n");
+                response.append("  概要: ").append(wf.description()).append("\n");
+                response.append("  ステップ:\n");
+                for (net.hero.genai.model.WorkflowStep step : wf.steps()) {
+                    response.append("    フェーズ ").append(step.phase()).append(": ").append(step.name()).append(" [").append(step.type()).append("]\n");
+                }
+                response.append("\n");
+            }
+
+            final Message systemMsg = new Message("assistant", response.toString(), LocalDateTime.now());
+            chatSession.addMessage(systemMsg);
+            appendMessageUI(systemMsg);
+            return;
+        }
+
         if (service.getActiveWorkflow() != null) {
             appendSystemInfoMessage("Interaction within workflow: " + promptText);
             int idx = service.getCurrentStepIndex();
@@ -253,8 +287,8 @@ public final class ChatController {
             Platform.runLater(() -> {
                 btnSend.setDisable(false);
                 if (result == null) {
-                    body.setText("Error determining workflow. Proceeding with standard chat.");
-                    executeStandardChatAfterDetermination(promptText);
+                    body.setText("Error determining workflow. Proposing standard chat.");
+                    proposeStandardChat(promptText);
                     return;
                 }
 
@@ -285,9 +319,7 @@ public final class ChatController {
 
                     String decision = result.decision();
                     if ("standard".equalsIgnoreCase(decision) || decision == null) {
-                        appendSystemInfoMessage("Decision: Standard Chat. Executing now...");
-                        service.setStandardChatMode(true);
-                        executeStandardChatAfterDetermination(finalUserRequest);
+                        proposeStandardChat(finalUserRequest);
                     } else if ("dynamic".equalsIgnoreCase(decision)) {
                         appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
                         service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
@@ -300,8 +332,8 @@ public final class ChatController {
                                 });
                             } else {
                                 Platform.runLater(() -> {
-                                    appendSystemInfoMessage("Failed to generate dynamic workflow. Falling back to standard chat.");
-                                    executeStandardChatAfterDetermination(finalUserRequest);
+                                    appendSystemInfoMessage("Failed to generate dynamic workflow. Proposing standard chat instead.");
+                                    proposeStandardChat(finalUserRequest);
                                 });
                             }
                         });
@@ -314,18 +346,33 @@ public final class ChatController {
                             }
                         }
                         if (matched != null) {
-                            service.startWorkflow(matched, finalUserRequest);
-                            appendSystemInfoMessage("Workflow matched: " + matched.name() + ". Starting now...");
+                            service.setProposedWorkflow(matched);
+                            service.setPendingUserRequest(finalUserRequest);
                             updateWorkflowPanelUI();
-                            runActiveWorkflowStep();
+                            appendSystemInfoMessage("Predefined workflow '" + matched.name() + "' proposed! Please approve to start executing.");
                         } else {
-                            appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Falling back to standard chat.");
-                            executeStandardChatAfterDetermination(finalUserRequest);
+                            appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Proposing standard chat instead.");
+                            proposeStandardChat(finalUserRequest);
                         }
                     }
                 }
             });
         });
+    }
+
+    private void proposeStandardChat(final String finalUserRequest) {
+        WorkflowService service = WorkflowService.getInstance();
+        Workflow standardChatWf = new Workflow(
+            "standard-chat-workflow",
+            "標準チャット",
+            "ワークフローを使用せずに、通常のAIモデルとやり取りを行う標準チャットを実行します。",
+            List.of(),
+            List.of(new net.hero.genai.model.WorkflowStep(1, "標準チャットの実行", "output", "通常の対話を行います。", null))
+        );
+        service.setProposedWorkflow(standardChatWf);
+        service.setPendingUserRequest(finalUserRequest);
+        updateWorkflowPanelUI();
+        appendSystemInfoMessage("Standard chat proposed! Please approve to start conversing.");
     }
 
     private void executeStandardChatAfterDetermination(final String promptText) {
@@ -545,11 +592,20 @@ public final class ChatController {
             if (pendingReq == null || pendingReq.isEmpty()) {
                 pendingReq = "Implement user request";
             }
-            service.startWorkflow(proposed, pendingReq);
-            service.clearPendingUserRequest();
-            updateWorkflowPanelUI();
-            appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
-            runActiveWorkflowStep();
+            if ("standard-chat-workflow".equals(proposed.id())) {
+                service.setStandardChatMode(true);
+                service.clearProposedWorkflow();
+                service.clearPendingUserRequest();
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("標準チャットを開始します。");
+                executeStandardChatAfterDetermination(pendingReq);
+            } else {
+                service.startWorkflow(proposed, pendingReq);
+                service.clearPendingUserRequest();
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
+                runActiveWorkflowStep();
+            }
         }
     }
 
