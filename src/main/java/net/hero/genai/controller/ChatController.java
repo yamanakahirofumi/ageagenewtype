@@ -34,6 +34,7 @@ public final class ChatController {
     private static final Logger LOGGER = Logger.getLogger(ChatController.class.getName());
 
     @FXML private ComboBox<String> comboModel;
+    @FXML private ComboBox<String> comboWorkflow;
     @FXML private Button btnRefreshModels;
     @FXML private Button btnOllamaConfig;
     @FXML private VBox configContainer;
@@ -92,6 +93,10 @@ public final class ChatController {
         comboModel.getItems().addAll("mock-llama3.2", "mock-gemma2", "mock-mistral");
         comboModel.getSelectionModel().select(0);
         chatSession.setSelectedModel(comboModel.getSelectionModel().getSelectedItem());
+
+        // Initialize comboWorkflow with default options
+        comboWorkflow.getItems().addAll("自動判定 (Auto)", "標準チャット (Standard)", "ソースコード作成・修正ワークフロー");
+        comboWorkflow.getSelectionModel().select(0);
 
         // Sync selected model to ChatSession and StatusBar
         comboModel.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
@@ -253,6 +258,30 @@ public final class ChatController {
                 String oldOutput = service.getStepOutputs().get(idx);
                 service.getStepOutputs().set(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
                 runActiveWorkflowStep();
+            }
+            return;
+        }
+
+        // Process selected workflow manual override
+        String selectedWf = comboWorkflow.getSelectionModel().getSelectedItem();
+        if ("標準チャット (Standard)".equals(selectedWf)) {
+            executeStandardChat(promptText);
+            return;
+        } else if ("ソースコード作成・修正ワークフロー".equals(selectedWf)) {
+            Workflow matched = null;
+            for (Workflow wf : service.getPredefinedWorkflows()) {
+                if ("source-code-creation".equals(wf.id())) {
+                    matched = wf;
+                    break;
+                }
+            }
+            if (matched != null) {
+                service.setProposedWorkflow(matched);
+                service.setPendingUserRequest(promptText);
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("ソースコード作成・修正ワークフローを提案しました。開始するには承認してください。");
+            } else {
+                appendSystemInfoMessage("Error: Built-in source-code-creation workflow not found.");
             }
             return;
         }
