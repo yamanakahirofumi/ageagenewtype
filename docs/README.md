@@ -15,6 +15,7 @@
 ## 2. 機能・仕様 (`docs/features/`)
 - [仕様書](features/Specifications.md)：プロジェクト概要、主要機能、UI/UX の概要
 - [ワークフロー機能仕様書](features/Workflow-Specification.md)：AIの回答品質を高めるための定義済み・動的ワークフローと「出力の後は必ず検証」原則に関する仕様
+- [利用者・サポートAI・メインAI協調動作仕様書](features/User-Support-Main-AI-Collaboration-Specification.md)：利用者、サポートAI、メインAIの3者間における対話、中継、追加情報付加、およびフィードバック制限事項に関する仕様
 - [ワークスペースファイル読み取り機能仕様書](features/Workspace-File-Access-Specification.md)：AIが必要に応じてワークスペース内のファイル情報を取得するための機能仕様
 - [エージェント・セキュリティマネージャ仕様書](features/Agent-Security-Manager.md)：AIエージェントの安全な実行制限に関する仕様（ファイル、外部実行、HTTP）
 - [エージェント・セキュリティマネージャGUI仕様書](features/Agent-Security-Manager-GUI-Specification.md)：セキュリティ制限、バイパス設定、警告表示、監査ログ表示などのGUI設計仕様
