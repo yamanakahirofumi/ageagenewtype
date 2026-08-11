@@ -22,6 +22,7 @@ import net.hero.genai.service.ChatStreamListener;
 import net.hero.genai.service.SecurityService;
 import net.hero.genai.service.WorkflowService;
 
+import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,6 +34,7 @@ public final class ChatController {
     private static final Logger LOGGER = Logger.getLogger(ChatController.class.getName());
 
     @FXML private ComboBox<String> comboModel;
+    @FXML private ComboBox<String> comboWorkflow;
     @FXML private Button btnRefreshModels;
     @FXML private Button btnOllamaConfig;
     @FXML private VBox configContainer;
@@ -92,6 +94,10 @@ public final class ChatController {
         comboModel.getSelectionModel().select(0);
         chatSession.setSelectedModel(comboModel.getSelectionModel().getSelectedItem());
 
+        // Initialize comboWorkflow with default options
+        comboWorkflow.getItems().addAll("自動判定 (Auto)", "標準チャット (Standard)", "ソースコード作成・修正ワークフロー");
+        comboWorkflow.getSelectionModel().select(0);
+
         // Sync selected model to ChatSession and StatusBar
         comboModel.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
@@ -107,8 +113,8 @@ public final class ChatController {
             chatScrollPane.setVvalue(1.0);
         });
 
-        // Load models asynchronously on startup
-        refreshModels(false);
+        // Test connection and load models asynchronously on startup
+        testConnectionAndLoadModelsOnStartup();
     }
 
     public void setMainWorkspaceController(final MainWorkspaceController controller) {
@@ -192,10 +198,35 @@ public final class ChatController {
         }
     }
 
+    private void testConnectionAndLoadModelsOnStartup() {
+        if (ollamaConfigController != null) {
+            final String baseUrl = ollamaConfigController.getConfig().getApiBaseUrl();
+            LOGGER.log(Level.INFO, "Testing Ollama connection on startup at " + baseUrl);
+
+            Thread.startVirtualThread(() -> {
+                final boolean connected = apiService.testConnection(baseUrl);
+                final List<String> models = connected ? apiService.fetchAvailableModels(baseUrl) : List.of();
+                Platform.runLater(() -> {
+                    ollamaConfigController.getConfig().setConnected(connected);
+                    ollamaConfigController.updateStatusUI(connected);
+                    if (connected && !models.isEmpty()) {
+                        comboModel.getItems().setAll(models);
+                        comboModel.getSelectionModel().select(0);
+                    }
+                    refreshModels(connected);
+                });
+            });
+        } else {
+            refreshModels(false);
+        }
+    }
+
     @FXML
     private void handleClearHistory() {
         chatSession.clear();
         messagesBox.getChildren().clear();
+        WorkflowService.getInstance().setStandardChatMode(false);
+        WorkflowService.getInstance().clearDeterminationHistory();
         LOGGER.log(Level.INFO, "Cleared chat history.");
     }
 
@@ -209,6 +240,40 @@ public final class ChatController {
         txtPrompt.clear();
 
         WorkflowService service = WorkflowService.getInstance();
+
+        // Check if the user is asking about the list of available workflows
+        String lowerPrompt = promptText.toLowerCase();
+        boolean isAskingForWorkflows = lowerPrompt.contains("どんなワークフロー")
+                || lowerPrompt.contains("何のワークフロー")
+                || lowerPrompt.contains("ワークフロー一覧")
+                || lowerPrompt.contains("ワークフローの一覧")
+                || lowerPrompt.contains("利用可能なワークフロー")
+                || lowerPrompt.contains("list workflows")
+                || lowerPrompt.contains("show workflows");
+
+        if (isAskingForWorkflows) {
+            final Message userMsg = new Message("user", promptText, LocalDateTime.now());
+            chatSession.addMessage(userMsg);
+            appendMessageUI(userMsg);
+
+            StringBuilder response = new StringBuilder();
+            response.append("利用可能なワークフローの一覧は以下の通りです：\n\n");
+            for (Workflow wf : service.getPredefinedWorkflows()) {
+                response.append("■ ").append(wf.name()).append(" (ID: ").append(wf.id()).append(")\n");
+                response.append("  概要: ").append(wf.description()).append("\n");
+                response.append("  ステップ:\n");
+                for (net.hero.genai.model.WorkflowStep step : wf.steps()) {
+                    response.append("    フェーズ ").append(step.phase()).append(": ").append(step.name()).append(" [").append(step.type()).append("]\n");
+                }
+                response.append("\n");
+            }
+
+            final Message systemMsg = new Message("assistant", response.toString(), LocalDateTime.now());
+            chatSession.addMessage(systemMsg);
+            appendMessageUI(systemMsg);
+            return;
+        }
+
         if (service.getActiveWorkflow() != null) {
             appendSystemInfoMessage("Interaction within workflow: " + promptText);
             int idx = service.getCurrentStepIndex();
@@ -220,44 +285,227 @@ public final class ChatController {
             return;
         }
 
-        Workflow matched = service.matchWorkflow(promptText);
-        if (matched != null) {
-            service.startWorkflow(matched);
-            appendSystemInfoMessage("Predefined workflow matched: " + matched.name() + ". Starting now...");
-            updateWorkflowPanelUI();
-            runActiveWorkflowStep();
+        // Process selected workflow manual override
+        String selectedWf = comboWorkflow.getSelectionModel().getSelectedItem();
+        if ("標準チャット (Standard)".equals(selectedWf)) {
+            executeStandardChat(promptText);
+            return;
+        } else if ("ソースコード作成・修正ワークフロー".equals(selectedWf)) {
+            Workflow matched = null;
+            for (Workflow wf : service.getPredefinedWorkflows()) {
+                if ("source-code-creation".equals(wf.id())) {
+                    matched = wf;
+                    break;
+                }
+            }
+            if (matched != null) {
+                service.setProposedWorkflow(matched);
+                service.setPendingUserRequest(promptText);
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("ソースコード作成・修正ワークフローを提案しました。開始するには承認してください。");
+            } else {
+                appendSystemInfoMessage("Error: Built-in source-code-creation workflow not found.");
+            }
             return;
         }
 
-        boolean isTaskRequest = promptText.length() > 5 && (
-            promptText.contains("create") || promptText.contains("make") || promptText.contains("implement") ||
-            promptText.contains("build") || promptText.contains("design") || promptText.contains("refactor") ||
-            promptText.contains("修正") || promptText.contains("作成") || promptText.contains("検証") ||
-            promptText.contains("機能") || promptText.contains("実装") || promptText.contains("設計") ||
-            promptText.contains("コード") || promptText.contains("テスト")
-        );
+        if (service.isStandardChatMode()) {
+            executeStandardChat(promptText);
+            return;
+        }
 
-        if (isTaskRequest) {
-            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
-            final String activeModel = chatSession.getSelectedModel();
-            appendSystemInfoMessage("No predefined workflow matched. Analyzing task and generating custom workflow...");
+        // Run Workflow Determination / Information Gathering Session
+        runWorkflowDetermination(promptText);
+    }
 
-            service.generateDynamicWorkflow(promptText, baseUrl, activeModel, apiService, (wf) -> {
-                if (wf != null) {
-                    service.setProposedWorkflow(wf);
-                    updateWorkflowPanelUI();
-                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+    private void runWorkflowDetermination(final String promptText) {
+        btnSend.setDisable(true);
+
+        final Message userMsg = new Message("user", promptText, LocalDateTime.now());
+        chatSession.addMessage(userMsg);
+        appendMessageUI(userMsg);
+
+        final VBox aiBubble = createMessageBubbleContainer("assistant");
+        final Label header = new Label("AI Assistant (Analyzing Request...)");
+        header.getStyleClass().add("message-header");
+        final TextArea body = createSelectableTextArea("...", "assistant-message-body");
+        aiBubble.getChildren().addAll(header, body);
+        messagesBox.getChildren().add(aiBubble);
+
+        final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+        final String activeModel = chatSession.getSelectedModel();
+
+        WorkflowService service = WorkflowService.getInstance();
+        service.determineWorkflow(promptText, baseUrl, activeModel, apiService, (result) -> {
+            Platform.runLater(() -> {
+                btnSend.setDisable(false);
+                if (result == null) {
+                    body.setText("Error determining workflow. Proposing standard chat.");
+                    proposeStandardChat(promptText);
+                    return;
+                }
+
+                // Add to determination history
+                service.getDeterminationHistoryWritable().add(userMsg);
+
+                if ("GATHERING".equalsIgnoreCase(result.status())) {
+                    body.setText(result.message());
+                    final Message assistantMsg = new Message("assistant", result.message(), LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+                    service.getDeterminationHistoryWritable().add(assistantMsg);
                 } else {
-                    Platform.runLater(() -> {
-                        appendSystemInfoMessage("Failed to generate dynamic workflow. Proceeding with standard single-turn conversation.");
-                        executeStandardChat(promptText);
-                    });
+                    body.setText(result.message());
+                    final Message assistantMsg = new Message("assistant", result.message(), LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+
+                    // Build consolidated user request from user's responses in determination history
+                    StringBuilder consolidatedRequest = new StringBuilder();
+                    consolidatedRequest.append("=== USER REQUEST DETAILS ===\n");
+                    for (Message msg : service.getDeterminationHistory()) {
+                        if ("user".equalsIgnoreCase(msg.role())) {
+                            consolidatedRequest.append("- ").append(msg.content()).append("\n");
+                        }
+                    }
+
+                    // Handle file access if requested by the support AI and permitted by SecurityService
+                    if (result.fileAccessNeeded() && result.fileAccessPath() != null) {
+                        File workspaceDir = SecurityService.getInstance().getActiveWorkspace();
+                        if (workspaceDir != null) {
+                            File file = new File(workspaceDir, result.fileAccessPath());
+                            boolean permitted = SecurityService.getInstance().checkPermission("file-access", file.getAbsolutePath(), workspaceDir.getAbsolutePath());
+                            if (permitted && file.exists() && file.isFile()) {
+                                try {
+                                    String fileContent = java.nio.file.Files.readString(file.toPath(), java.nio.charset.StandardCharsets.UTF_8);
+                                    consolidatedRequest.append("\n=== FILE CONTEXT ATTACHMENT ===\n");
+                                    consolidatedRequest.append("File: ").append(result.fileAccessPath()).append("\n");
+                                    consolidatedRequest.append("```\n").append(fileContent).append("\n```\n");
+                                    appendSystemInfoMessage("Fetched file context attachment for: " + result.fileAccessPath());
+                                } catch (Exception e) {
+                                    LOGGER.log(Level.WARNING, "Failed to read file for context attachment: " + file.getAbsolutePath(), e);
+                                }
+                            } else if (!permitted) {
+                                appendSystemInfoMessage("Security Block: Access denied for file context: " + result.fileAccessPath());
+                            }
+                        }
+                    }
+
+                    final String finalUserRequest = consolidatedRequest.toString();
+
+                    service.clearDeterminationHistory();
+
+                    String decision = result.decision();
+                    if ("standard".equalsIgnoreCase(decision) || decision == null) {
+                        proposeStandardChat(finalUserRequest);
+                    } else if ("dynamic".equalsIgnoreCase(decision)) {
+                        appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
+                        service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
+                            if (wf != null) {
+                                service.setProposedWorkflow(wf);
+                                service.setPendingUserRequest(finalUserRequest);
+                                Platform.runLater(() -> {
+                                    updateWorkflowPanelUI();
+                                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+                                });
+                            } else {
+                                Platform.runLater(() -> {
+                                    appendSystemInfoMessage("Failed to generate dynamic workflow. Proposing standard chat instead.");
+                                    proposeStandardChat(finalUserRequest);
+                                });
+                            }
+                        });
+                    } else {
+                        Workflow matched = null;
+                        for (Workflow wf : service.getPredefinedWorkflows()) {
+                            if (wf.id().equals(decision)) {
+                                matched = wf;
+                                break;
+                            }
+                        }
+                        if (matched != null) {
+                            service.setProposedWorkflow(matched);
+                            service.setPendingUserRequest(finalUserRequest);
+                            updateWorkflowPanelUI();
+                            appendSystemInfoMessage("Predefined workflow '" + matched.name() + "' proposed! Please approve to start executing.");
+                        } else {
+                            appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Proposing standard chat instead.");
+                            proposeStandardChat(finalUserRequest);
+                        }
+                    }
                 }
             });
-            return;
+        });
+    }
+
+    private void proposeStandardChat(final String finalUserRequest) {
+        WorkflowService service = WorkflowService.getInstance();
+        Workflow standardChatWf = new Workflow(
+            "standard-chat-workflow",
+            "標準チャット",
+            "ワークフローを使用せずに、通常のAIモデルとやり取りを行う標準チャットを実行します。",
+            List.of(),
+            List.of(new net.hero.genai.model.WorkflowStep(1, "標準チャットの実行", "output", "通常の対話を行います。", null))
+        );
+        service.setProposedWorkflow(standardChatWf);
+        service.setPendingUserRequest(finalUserRequest);
+        updateWorkflowPanelUI();
+        appendSystemInfoMessage("Standard chat proposed! Please approve to start conversing.");
+    }
+
+    private void executeStandardChatAfterDetermination(final String promptText) {
+        btnSend.setDisable(true);
+
+        String finalPrompt = promptText;
+        if (currentContextFile != null && mainWorkspaceController != null) {
+            final String fileContent = mainWorkspaceController.getActiveEditorContent();
+            finalPrompt = "[File Context: " + currentContextFile.getName() + "]\n" +
+                    "```\n" + fileContent + "\n```\n\n" +
+                    "User Question:\n" + promptText;
         }
 
-        executeStandardChat(promptText);
+        final VBox aiBubble = createMessageBubbleContainer("assistant");
+        final Label header = new Label("AI Assistant (" + chatSession.getSelectedModel() + ")");
+        header.getStyleClass().add("message-header");
+        final TextArea body = createSelectableTextArea("...", "assistant-message-body");
+        aiBubble.getChildren().addAll(header, body);
+        messagesBox.getChildren().add(aiBubble);
+
+        final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+        final String activeModel = chatSession.getSelectedModel();
+
+        final StringBuilder responseBuilder = new StringBuilder();
+
+        apiService.chatStream(baseUrl, activeModel, finalPrompt, new ChatStreamListener() {
+            @Override
+            public void onNext(String token) {
+                Platform.runLater(() -> {
+                    if (responseBuilder.length() == 0) {
+                        body.setText("");
+                    }
+                    responseBuilder.append(token);
+                    body.setText(responseBuilder.toString());
+                });
+            }
+
+            @Override
+            public void onComplete(String fullResponse) {
+                Platform.runLater(() -> {
+                    final Message assistantMsg = new Message("assistant", fullResponse, LocalDateTime.now());
+                    chatSession.addMessage(assistantMsg);
+                    btnSend.setDisable(false);
+                });
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                Platform.runLater(() -> {
+                    body.setText("Error occurred: " + error.getMessage());
+                    body.setStyle("-fx-text-fill: #f44336;");
+                    final Message errorMsg = new Message("assistant", "Error: " + error.getMessage(), LocalDateTime.now());
+                    chatSession.addMessage(errorMsg);
+                    btnSend.setDisable(false);
+                });
+            }
+        });
     }
 
     private void executeStandardChat(final String promptText) {
@@ -416,10 +664,24 @@ public final class ChatController {
         WorkflowService service = WorkflowService.getInstance();
         Workflow proposed = service.getProposedWorkflow();
         if (proposed != null) {
-            service.startWorkflow(proposed);
-            updateWorkflowPanelUI();
-            appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
-            runActiveWorkflowStep();
+            String pendingReq = service.getPendingUserRequest();
+            if (pendingReq == null || pendingReq.isEmpty()) {
+                pendingReq = "Implement user request";
+            }
+            if ("standard-chat-workflow".equals(proposed.id())) {
+                service.setStandardChatMode(true);
+                service.clearProposedWorkflow();
+                service.clearPendingUserRequest();
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("標準チャットを開始します。");
+                executeStandardChatAfterDetermination(pendingReq);
+            } else {
+                service.startWorkflow(proposed, pendingReq);
+                service.clearPendingUserRequest();
+                updateWorkflowPanelUI();
+                appendSystemInfoMessage("Workflow '" + proposed.name() + "' approved and started!");
+                runActiveWorkflowStep();
+            }
         }
     }
 

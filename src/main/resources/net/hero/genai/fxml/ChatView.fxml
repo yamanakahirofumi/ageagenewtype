@@ -43,6 +43,14 @@
             </children>
         </HBox>
 
+        <!-- Workflow Selection -->
+        <HBox alignment="CENTER_LEFT" spacing="8.0">
+            <children>
+                <Label style="-fx-text-fill: #cccccc;" text="Workflow:" />
+                <ComboBox fx:id="comboWorkflow" maxWidth="Infinity" HBox.hgrow="ALWAYS" />
+            </children>
+        </HBox>
+
         <!-- Configuration view (expandable or toggled inline) -->
         <VBox fx:id="configContainer" managed="false" visible="false">
             <fx:include fx:id="ollamaConfig" source="OllamaConfig.fxml" />

@@ -171,4 +171,91 @@ public final class WorkflowServiceTest {
         assertNull(service.getActiveWorkflow());
         assertEquals(-1, service.getCurrentStepIndex());
     }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with valid GATHERING JSON should parse correctly")
+    public void parseDeterminationResultJson_ValidGatheringJson_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"GATHERING\", \"decision\": null, \"message\": \"具体的な要件を教えていただけますか？\"}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("GATHERING", result.status());
+        assertNull(result.decision());
+        assertEquals("具体的な要件を教えていただけますか？", result.message());
+    }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with valid DETERMINED JSON should parse correctly")
+    public void parseDeterminationResultJson_ValidDeterminedJson_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"DETERMINED\", \"decision\": \"source-code-creation\", \"message\": \"ソースコード作成を開始します。\"}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("DETERMINED", result.status());
+        assertEquals("source-code-creation", result.decision());
+        assertEquals("ソースコード作成を開始します。", result.message());
+    }
+
+    @Test
+    @DisplayName("StartWorkflow with custom user request should store and initialize correctly")
+    public void startWorkflow_WithUserRequest_ShouldStoreAndInitializeCorrectly() {
+        // Arrange
+        service.loadBuiltInWorkflows();
+        Workflow wf = service.getPredefinedWorkflows().get(0);
+        String customRequest = "Create a custom calculator class in Java.";
+
+        // Act
+        service.startWorkflow(wf, customRequest);
+
+        // Assert
+        assertEquals(wf, service.getActiveWorkflow());
+        assertEquals(customRequest, service.getUserRequest());
+        assertEquals(-1, service.getCurrentStepIndex());
+        assertEquals(wf.steps().size(), service.getStepStatuses().size());
+        assertEquals(WorkflowStepStatus.PENDING, service.getStepStatuses().get(0));
+    }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with file access needed should parse correctly")
+    public void parseDeterminationResultJson_WithFileAccess_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"DETERMINED\", \"decision\": \"standard\", \"message\": \"pom.xmlを読み込みます。\", \"fileAccessNeeded\": true, \"fileAccessPath\": \"pom.xml\"}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("DETERMINED", result.status());
+        assertEquals("standard", result.decision());
+        assertEquals("pom.xmlを読み込みます。", result.message());
+        assertTrue(result.fileAccessNeeded());
+        assertEquals("pom.xml", result.fileAccessPath());
+    }
+
+    @Test
+    @DisplayName("ParseDeterminationResultJson with file access not needed should parse correctly")
+    public void parseDeterminationResultJson_WithNoFileAccess_ShouldParseCorrectly() {
+        // Arrange
+        String json = "{\"status\": \"GATHERING\", \"decision\": null, \"message\": \"どのようなソースコードを作成しますか？\", \"fileAccessNeeded\": false, \"fileAccessPath\": null}";
+
+        // Act
+        WorkflowService.DeterminationResult result = WorkflowService.parseDeterminationResultJson(json);
+
+        // Assert
+        assertNotNull(result);
+        assertEquals("GATHERING", result.status());
+        assertNull(result.decision());
+        assertEquals("どのようなソースコードを作成しますか？", result.message());
+        assertFalse(result.fileAccessNeeded());
+        assertNull(result.fileAccessPath());
+    }
 }
