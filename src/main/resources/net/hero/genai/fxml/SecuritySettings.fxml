@@ -24,7 +24,6 @@
             <children>
                 <HBox alignment="CENTER_LEFT" spacing="15.0">
                     <children>
-                        <CheckBox fx:id="chkEnableSecurity" mnemonicParsing="false" style="-fx-text-fill: #ffffff; -fx-font-weight: bold; -fx-font-size: 13px;" text="エージェント制限を有効にする（推奨）" />
                         <HBox alignment="CENTER_LEFT" spacing="8.0" HBox.hgrow="ALWAYS">
                             <children>
                                 <Label style="-fx-text-fill: #cccccc;" text="自動復帰時間:" />
@@ -47,11 +46,12 @@
                                 <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
                             </padding>
                             <children>
-                                <TableView fx:id="tblRules" prefHeight="250.0" prefWidth="680.0" VBox.vgrow="ALWAYS">
+                                <TableView fx:id="tblRules" prefHeight="180.0" prefWidth="680.0" VBox.vgrow="ALWAYS">
                                     <columns>
+                                        <TableColumn fx:id="colRuleEnabled" prefWidth="60.0" text="有効" />
                                         <TableColumn fx:id="colRuleCategory" prefWidth="130.0" text="カテゴリ" />
                                         <TableColumn fx:id="colRuleType" prefWidth="100.0" text="種別" />
-                                        <TableColumn fx:id="colRulePattern" prefWidth="420.0" text="パターン" />
+                                        <TableColumn fx:id="colRulePattern" prefWidth="360.0" text="パターン" />
                                     </columns>
                                 </TableView>
                                 <!-- Interactive Add Form -->
@@ -63,30 +63,18 @@
                                         <Button fx:id="btnAddRule" onAction="#handleAddRule" text="追加" />
                                     </children>
                                 </HBox>
-                                <HBox alignment="CENTER_RIGHT" spacing="10.0">
+                                <!-- Read-only rules file preview -->
+                                <VBox spacing="5.0">
                                     <children>
-                                        <Button fx:id="btnDeleteRule" onAction="#handleDeleteRule" styleClass="button-secondary" text="選択ルールを削除" />
-                                        <Button fx:id="btnSaveRules" onAction="#handleSaveRules" text="変更を保存" />
+                                        <Label style="-fx-text-fill: #cccccc; -fx-font-weight: bold;" text="設定ファイルプレビュー (.conf):" />
+                                        <TextArea fx:id="txtRawConf" editable="false" prefHeight="100.0" prefWidth="680.0" style="-fx-font-family: 'Courier New', monospace; -fx-font-size: 11px;" wrapText="true" />
                                     </children>
-                                </HBox>
-                            </children>
-                        </VBox>
-                    </content>
-                </Tab>
-
-                <!-- Direct Edit Tab -->
-                <Tab text="直接編集 (.conf)">
-                    <content>
-                        <VBox spacing="10.0">
-                            <padding>
-                                <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
-                            </padding>
-                            <children>
-                                <TextArea fx:id="txtRawConf" prefHeight="300.0" prefWidth="680.0" style="-fx-font-family: 'Courier New', monospace; -fx-font-size: 13px;" VBox.vgrow="ALWAYS" />
+                                </VBox>
                                 <HBox alignment="CENTER_RIGHT" spacing="10.0">
                                     <children>
                                         <Button fx:id="btnResetConf" onAction="#handleResetConf" styleClass="button-secondary" text="デフォルトに戻す" />
-                                        <Button fx:id="btnSaveRawConf" onAction="#handleSaveRawConf" text="設定を反映して保存" />
+                                        <Button fx:id="btnDeleteRule" onAction="#handleDeleteRule" styleClass="button-secondary" text="選択ルールを削除" />
+                                        <Button fx:id="btnSaveRules" onAction="#handleSaveRules" text="変更を保存" />
                                     </children>
                                 </HBox>
                             </children>

@@ -3,7 +3,14 @@ package net.hero.genai.model;
 /**
  * Represents a security rule for the AI Agent.
  */
-public record SecurityRule(String category, String pattern, boolean isDeny) {
+public record SecurityRule(String category, String pattern, boolean isDeny, boolean enabled) {
+
+    /**
+     * Overloaded constructor for backward compatibility.
+     */
+    public SecurityRule(String category, String pattern, boolean isDeny) {
+        this(category, pattern, isDeny, true);
+    }
 
     /**
      * Formats this rule as a configuration line.

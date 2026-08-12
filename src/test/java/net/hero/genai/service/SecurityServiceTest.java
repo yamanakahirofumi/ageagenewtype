@@ -77,8 +77,8 @@ public final class SecurityServiceTest {
         // Arrange
         final File tempFile = tempDir.resolve("test_security.conf").toFile();
         final List<SecurityRule> originalRules = List.of(
-                new SecurityRule("file-access", "${WORKSPACE_DIR}/src/*", false),
-                new SecurityRule("program-execution", "!rm", true)
+                new SecurityRule("file-access", "${WORKSPACE_DIR}/src/*", false, true),
+                new SecurityRule("program-execution", "!rm", true, false)
         );
         securityService.setRules(originalRules);
 
@@ -96,8 +96,10 @@ public final class SecurityServiceTest {
         assertEquals(originalRules.size(), reloadedRules.size());
         assertEquals(originalRules.get(0).pattern(), reloadedRules.get(0).pattern());
         assertEquals(originalRules.get(0).isDeny(), reloadedRules.get(0).isDeny());
+        assertEquals(originalRules.get(0).enabled(), reloadedRules.get(0).enabled());
         assertEquals(originalRules.get(1).pattern(), reloadedRules.get(1).pattern());
         assertEquals(originalRules.get(1).isDeny(), reloadedRules.get(1).isDeny());
+        assertEquals(originalRules.get(1).enabled(), reloadedRules.get(1).enabled());
     }
 
     @Test
@@ -123,5 +125,29 @@ public final class SecurityServiceTest {
         assertEquals("file-access", latestLog.category());
         assertEquals("/workspace/docs/manual.md", latestLog.operation());
         assertEquals("ALLOW", latestLog.result());
+    }
+
+    @Test
+    @DisplayName("disabling a specific rule should skip its evaluation")
+    public void checkPermission_DisabledSpecificRule_ShouldBeSkipped() {
+        // Arrange
+        // We have a default rule that blocks docs/secrets/*
+        // Let's find that rule, and disable it.
+        final List<SecurityRule> defaultRules = securityService.getRules();
+        final List<SecurityRule> modifiedRules = defaultRules.stream().map(r -> {
+            if (r.pattern().contains("docs/secrets")) {
+                return new SecurityRule(r.category(), r.pattern(), r.isDeny(), false);
+            }
+            return r;
+        }).toList();
+        securityService.setRules(modifiedRules);
+
+        // Now, docs/secrets/* is denied by default unless we hit docs/* which is allowed.
+        // evaluation of rules:
+        // docs/secrets/* is disabled, so we skip it.
+        // docs/* is enabled and matched. So it should allow!
+        final boolean allowed = securityService.checkPermission("file-access", "/workspace/docs/secrets/credentials.txt", "/workspace");
+
+        assertTrue(allowed);
     }
 }

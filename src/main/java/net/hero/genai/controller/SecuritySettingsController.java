@@ -34,12 +34,12 @@ public final class SecuritySettingsController {
 
     private static final Logger LOGGER = Logger.getLogger(SecuritySettingsController.class.getName());
 
-    @FXML private CheckBox chkEnableSecurity;
     @FXML private ComboBox<String> comboAutoRestore;
     @FXML private TabPane tabPane;
 
     // Rules Tab
     @FXML private TableView<SecurityRule> tblRules;
+    @FXML private TableColumn<SecurityRule, Boolean> colRuleEnabled;
     @FXML private TableColumn<SecurityRule, String> colRuleCategory;
     @FXML private TableColumn<SecurityRule, String> colRuleType;
     @FXML private TableColumn<SecurityRule, String> colRulePattern;
@@ -52,11 +52,10 @@ public final class SecuritySettingsController {
 
     @FXML private Button btnDeleteRule;
     @FXML private Button btnSaveRules;
-
-    // Direct Edit Tab
-    @FXML private TextArea txtRawConf;
     @FXML private Button btnResetConf;
-    @FXML private Button btnSaveRawConf;
+
+    // Read-only configuration contents view
+    @FXML private TextArea txtRawConf;
 
     // Audit Logs Tab
     @FXML private TableView<AuditLogEntry> tblAuditLogs;
@@ -72,49 +71,14 @@ public final class SecuritySettingsController {
     private final ObservableList<SecurityRule> ruleList = FXCollections.observableArrayList();
     private final ObservableList<AuditLogEntry> auditLogList = FXCollections.observableArrayList();
 
-    private boolean isUpdatingCheckbox = false;
-
     @FXML
     public void initialize() {
         LOGGER.log(Level.INFO, "Initializing SecuritySettingsController...");
 
-        // Setup Checkbox & Restore ComboBox
-        chkEnableSecurity.setSelected(securityService.isEnabled());
-        chkEnableSecurity.selectedProperty().addListener((obs, oldVal, newVal) -> {
-            if (isUpdatingCheckbox) {
-                return;
-            }
-            if (!newVal) {
-                // Confirm disabling security
-                final Alert alert = new Alert(Alert.AlertType.WARNING);
-                alert.setTitle("セキュリティ制限の無効化");
-                alert.setHeaderText("警告: セキュリティ制限の無効化");
-                alert.setContentText("セキュリティ制限を無効化すると、AIエージェントによるファイルの破壊、" +
-                        "不要なコマンド実行、外部へのデータ送信のリスクが高まります。無効化しますか？");
-
-                final ButtonType btnConfirm = new ButtonType("無効化する (非推奨)", ButtonType.OK.getButtonData());
-                final ButtonType btnCancel = new ButtonType("キャンセル", ButtonType.CANCEL.getButtonData());
-                alert.getButtonTypes().setAll(btnCancel, btnConfirm);
-
-                final Optional<ButtonType> result = alert.showAndWait();
-                if (result.isPresent() && result.get() == btnConfirm) {
-                    securityService.setEnabled(false);
-                } else {
-                    // Revert checkbox state
-                    isUpdatingCheckbox = true;
-                    chkEnableSecurity.setSelected(true);
-                    isUpdatingCheckbox = false;
-                }
-            } else {
-                securityService.setEnabled(true);
-            }
-        });
-
-        // Register callback to update checkbox state when timer auto-restores
+        // Register callback to update rules and textarea state when timer auto-restores
         securityService.registerOnSecurityStateChanged(() -> {
-            isUpdatingCheckbox = true;
-            chkEnableSecurity.setSelected(securityService.isEnabled());
-            isUpdatingCheckbox = false;
+            ruleList.setAll(securityService.getRules());
+            updateRawConfTextArea();
         });
 
         // Populate Auto Restore Combobox
@@ -123,6 +87,62 @@ public final class SecuritySettingsController {
         comboAutoRestore.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 securityService.setAutoRestoreMinutes(parseAutoRestoreMinutes(newVal));
+            }
+        });
+
+        // Setup Rules Table Column for CheckBoxes
+        colRuleEnabled.setCellValueFactory(new PropertyValueFactory<>("enabled"));
+        colRuleEnabled.setCellFactory(column -> new TableCell<>() {
+            private final CheckBox checkBox = new CheckBox();
+            private boolean isUpdating = false;
+
+            {
+                checkBox.setOnAction(event -> {
+                    if (isUpdating) {
+                        return;
+                    }
+                    final SecurityRule rule = getTableRow().getItem();
+                    if (rule != null) {
+                        final boolean newVal = checkBox.isSelected();
+                        if (!newVal) {
+                            // Confirm disabling individual security rule
+                            final Alert alert = new Alert(Alert.AlertType.WARNING);
+                            alert.setTitle("セキュリティ制限の無効化");
+                            alert.setHeaderText("警告: セキュリティ制限の無効化");
+                            alert.setContentText("セキュリティ制限を無効化すると、AIエージェントによるファイルの破壊、" +
+                                    "不要なコマンド実行、外部へのデータ送信のリスクが高まります。無効化しますか？");
+
+                            final ButtonType btnConfirm = new ButtonType("無効化する (非推奨)", ButtonType.OK.getButtonData());
+                            final ButtonType btnCancel = new ButtonType("キャンセル", ButtonType.CANCEL.getButtonData());
+                            alert.getButtonTypes().setAll(btnCancel, btnConfirm);
+
+                            final Optional<ButtonType> result = alert.showAndWait();
+                            if (result.isPresent() && result.get() == btnConfirm) {
+                                updateRuleEnabledState(rule, false);
+                            } else {
+                                // Revert checkbox state
+                                isUpdating = true;
+                                checkBox.setSelected(true);
+                                isUpdating = false;
+                            }
+                        } else {
+                            updateRuleEnabledState(rule, true);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                } else {
+                    isUpdating = true;
+                    checkBox.setSelected(item);
+                    isUpdating = false;
+                    setGraphic(checkBox);
+                }
             }
         });
 
@@ -180,6 +200,21 @@ public final class SecuritySettingsController {
         tblAuditLogs.setItems(auditLogList);
     }
 
+    private void updateRuleEnabledState(final SecurityRule oldRule, final boolean enabled) {
+        final int index = ruleList.indexOf(oldRule);
+        if (index >= 0) {
+            final SecurityRule updatedRule = new SecurityRule(
+                    oldRule.category(),
+                    oldRule.pattern(),
+                    oldRule.isDeny(),
+                    enabled
+            );
+            ruleList.set(index, updatedRule);
+            // Save state immediately or keep it in memory. Typically we update memory and raw textarea preview.
+            updateRawConfTextArea();
+        }
+    }
+
     private int parseAutoRestoreMinutes(final String label) {
         return switch (label) {
             case "5分" -> 5;
@@ -213,11 +248,12 @@ public final class SecuritySettingsController {
             return;
         }
 
-        final SecurityRule rule = new SecurityRule(category, pattern.trim(), isDeny);
+        final SecurityRule rule = new SecurityRule(category, pattern.trim(), isDeny, true);
         ruleList.add(rule);
         tblRules.getSelectionModel().select(rule);
         txtNewPattern.clear();
         chkNewIsDeny.setSelected(false);
+        updateRawConfTextArea();
     }
 
     @FXML
@@ -225,6 +261,7 @@ public final class SecuritySettingsController {
         final SecurityRule selected = tblRules.getSelectionModel().getSelectedItem();
         if (selected != null) {
             ruleList.remove(selected);
+            updateRawConfTextArea();
         }
     }
 
@@ -250,28 +287,6 @@ public final class SecuritySettingsController {
     }
 
     @FXML
-    private void handleSaveRawConf() {
-        final String rawText = txtRawConf.getText();
-        try {
-            // Write to a temporary file, parse using securityService, then load back
-            final File temp = File.createTempFile("security_rules_temp", ".conf");
-            temp.deleteOnExit();
-            Files.writeString(temp.toPath(), rawText, StandardCharsets.UTF_8);
-
-            securityService.loadFromFile(temp);
-            ruleList.setAll(securityService.getRules());
-            saveToWorkspaceIfAvailable();
-
-            final Alert alert = new Alert(Alert.AlertType.INFORMATION, "直接編集した設定を反映して保存しました。");
-            alert.showAndWait();
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to apply raw configuration edits", e);
-            final Alert alert = new Alert(Alert.AlertType.ERROR, "設定の保存中にエラーが発生しました: " + e.getMessage());
-            alert.showAndWait();
-        }
-    }
-
-    @FXML
     private void handleClearAuditLogs() {
         securityService.clearAuditLogs();
         auditLogList.clear();
@@ -291,9 +306,11 @@ public final class SecuritySettingsController {
             }
         }
 
-        final SecurityRule newRule = new SecurityRule(entry.category(), pattern, false);
+        final SecurityRule newRule = new SecurityRule(entry.category(), pattern, false, true);
         ruleList.add(newRule);
         tblRules.getSelectionModel().select(newRule);
+
+        updateRawConfTextArea();
 
         // Show rules tab
         tabPane.getSelectionModel().select(0);
@@ -304,14 +321,15 @@ public final class SecuritySettingsController {
     }
 
     private void updateRawConfTextArea() {
-        final List<SecurityRule> rules = securityService.getRules();
+        // Build raw view from ruleList (reflective of unsaved memory changes in GUI)
         final List<String> lines = new ArrayList<>();
         final String[] categories = {"file-access", "program-execution", "http-url"};
         for (final String category : categories) {
             lines.add("[" + category + "]");
-            for (final SecurityRule rule : rules) {
+            for (final SecurityRule rule : ruleList) {
                 if (rule.category().equalsIgnoreCase(category)) {
-                    lines.add(rule.toLine());
+                    String line = (rule.enabled() ? "" : "#inactive#") + rule.toLine();
+                    lines.add(line);
                 }
             }
             lines.add("");
