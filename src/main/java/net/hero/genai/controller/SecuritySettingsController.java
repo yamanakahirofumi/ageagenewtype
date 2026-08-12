@@ -13,7 +13,6 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.cell.PropertyValueFactory;
 import net.hero.genai.model.AuditLogEntry;
@@ -54,9 +53,6 @@ public final class SecuritySettingsController {
     @FXML private Button btnSaveRules;
     @FXML private Button btnResetConf;
 
-    // Read-only configuration contents view
-    @FXML private TextArea txtRawConf;
-
     // Audit Logs Tab
     @FXML private TableView<AuditLogEntry> tblAuditLogs;
     @FXML private TableColumn<AuditLogEntry, String> colAuditTimestamp;
@@ -75,10 +71,9 @@ public final class SecuritySettingsController {
     public void initialize() {
         LOGGER.log(Level.INFO, "Initializing SecuritySettingsController...");
 
-        // Register callback to update rules and textarea state when timer auto-restores
+        // Register callback to update rules and state when timer auto-restores
         securityService.registerOnSecurityStateChanged(() -> {
             ruleList.setAll(securityService.getRules());
-            updateRawConfTextArea();
         });
 
         // Populate Auto Restore Combobox
@@ -107,7 +102,7 @@ public final class SecuritySettingsController {
                         if (!newVal) {
                             // Confirm disabling individual security rule
                             final Alert alert = new Alert(Alert.AlertType.WARNING);
-                            alert.setTitle("セキュリティ制限の無効化");
+                            alert.setTitle("セキュリティ制限 of ルール");
                             alert.setHeaderText("警告: セキュリティ制限の無効化");
                             alert.setContentText("セキュリティ制限を無効化すると、AIエージェントによるファイルの破壊、" +
                                     "不要なコマンド実行、外部へのデータ送信のリスクが高まります。無効化しますか？");
@@ -160,9 +155,6 @@ public final class SecuritySettingsController {
         comboNewCategory.getItems().addAll("file-access", "program-execution", "http-url");
         comboNewCategory.getSelectionModel().select(0);
 
-        // Setup Direct Edit Conf
-        updateRawConfTextArea();
-
         // Setup Audit Logs Table
         colAuditTimestamp.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
         colAuditCategory.setCellValueFactory(new PropertyValueFactory<>("category"));
@@ -210,8 +202,6 @@ public final class SecuritySettingsController {
                     enabled
             );
             ruleList.set(index, updatedRule);
-            // Save state immediately or keep it in memory. Typically we update memory and raw textarea preview.
-            updateRawConfTextArea();
         }
     }
 
@@ -253,7 +243,6 @@ public final class SecuritySettingsController {
         tblRules.getSelectionModel().select(rule);
         txtNewPattern.clear();
         chkNewIsDeny.setSelected(false);
-        updateRawConfTextArea();
     }
 
     @FXML
@@ -261,7 +250,6 @@ public final class SecuritySettingsController {
         final SecurityRule selected = tblRules.getSelectionModel().getSelectedItem();
         if (selected != null) {
             ruleList.remove(selected);
-            updateRawConfTextArea();
         }
     }
 
@@ -269,7 +257,6 @@ public final class SecuritySettingsController {
     private void handleSaveRules() {
         securityService.setRules(new ArrayList<>(ruleList));
         saveToWorkspaceIfAvailable();
-        updateRawConfTextArea();
 
         final Alert alert = new Alert(Alert.AlertType.INFORMATION, "ルールを保存しました。");
         alert.showAndWait();
@@ -279,7 +266,6 @@ public final class SecuritySettingsController {
     private void handleResetConf() {
         securityService.loadDefaultRules();
         ruleList.setAll(securityService.getRules());
-        updateRawConfTextArea();
         saveToWorkspaceIfAvailable();
 
         final Alert alert = new Alert(Alert.AlertType.INFORMATION, "デフォルトルールにリセットしました。");
@@ -310,31 +296,12 @@ public final class SecuritySettingsController {
         ruleList.add(newRule);
         tblRules.getSelectionModel().select(newRule);
 
-        updateRawConfTextArea();
-
         // Show rules tab
         tabPane.getSelectionModel().select(0);
 
         final Alert alert = new Alert(Alert.AlertType.INFORMATION,
                 "監査履歴から新しい許可ルールを提案・追加しました。保存ボタンを押して有効化してください。");
         alert.showAndWait();
-    }
-
-    private void updateRawConfTextArea() {
-        // Build raw view from ruleList (reflective of unsaved memory changes in GUI)
-        final List<String> lines = new ArrayList<>();
-        final String[] categories = {"file-access", "program-execution", "http-url"};
-        for (final String category : categories) {
-            lines.add("[" + category + "]");
-            for (final SecurityRule rule : ruleList) {
-                if (rule.category().equalsIgnoreCase(category)) {
-                    String line = (rule.enabled() ? "" : "#inactive#") + rule.toLine();
-                    lines.add(line);
-                }
-            }
-            lines.add("");
-        }
-        txtRawConf.setText(String.join("\n", lines));
     }
 
     private void saveToWorkspaceIfAvailable() {
