@@ -37,6 +37,8 @@ public final class WorkflowService {
     // For dynamic workflow proposal approval flow
     private Workflow proposedWorkflow = null;
 
+    private boolean clarificationActive = false;
+
     // For Workflow Determination / Information Gathering separate session
     private final List<Message> determinationHistory = new ArrayList<>();
     private String pendingUserRequest = "";
@@ -261,6 +263,12 @@ public final class WorkflowService {
         return List.copyOf(stepOutputs);
     }
 
+    public void setStepOutput(int index, String output) {
+        if (index >= 0 && index < stepOutputs.size()) {
+            this.stepOutputs.set(index, output);
+        }
+    }
+
     public Workflow getProposedWorkflow() {
         return proposedWorkflow;
     }
@@ -271,6 +279,14 @@ public final class WorkflowService {
 
     public void clearProposedWorkflow() {
         this.proposedWorkflow = null;
+    }
+
+    public boolean isClarificationActive() {
+        return clarificationActive;
+    }
+
+    public void setClarificationActive(boolean clarificationActive) {
+        this.clarificationActive = clarificationActive;
     }
 
     public List<Message> getDeterminationHistory() {
@@ -328,6 +344,7 @@ public final class WorkflowService {
             this.stepOutputs.add("");
         }
         this.proposedWorkflow = null;
+        this.clarificationActive = false;
         LOGGER.log(Level.INFO, "Workflow started: " + workflow.name() + " with user request: " + this.userRequest);
     }
 
@@ -351,6 +368,7 @@ public final class WorkflowService {
         this.userRequest = "";
         this.determinationHistory.clear();
         this.standardChatMode = false;
+        this.clarificationActive = false;
         LOGGER.log(Level.INFO, "Workflow canceled.");
     }
 
@@ -400,6 +418,15 @@ public final class WorkflowService {
                 promptBuilder.append((this.userRequest != null && !this.userRequest.isEmpty()) ? this.userRequest : "Implement user request");
             } else {
                 promptBuilder.append("Please refine based on previous step design.");
+            }
+            promptBuilder.append("\n\n");
+
+            if (currentStepIndex < stepOutputs.size()) {
+                String currentStepOutput = stepOutputs.get(currentStepIndex);
+                if (currentStepOutput != null && !currentStepOutput.isEmpty()) {
+                    promptBuilder.append("=== REVISION / FEEDBACK FOR THIS STEP ===\n");
+                    promptBuilder.append(currentStepOutput).append("\n\n");
+                }
             }
 
             String prompt = promptBuilder.toString();
@@ -463,6 +490,15 @@ public final class WorkflowService {
                 promptBuilder.append("Verify the previous step output according to the description. Be rigorous.\n");
                 promptBuilder.append("At the end of your response, you MUST write exactly 'VERIFICATION: SUCCESS' if everything is correct and no changes are needed, ");
                 promptBuilder.append("or 'VERIFICATION: FAILED' followed by specific points/errors if any corrections are required.\n");
+                promptBuilder.append("\n\n");
+
+                if (currentStepIndex < stepOutputs.size()) {
+                    String currentStepOutput = stepOutputs.get(currentStepIndex);
+                    if (currentStepOutput != null && !currentStepOutput.isEmpty()) {
+                        promptBuilder.append("=== REVISION / FEEDBACK FOR THIS STEP ===\n");
+                        promptBuilder.append(currentStepOutput).append("\n\n");
+                    }
+                }
 
                 String prompt = promptBuilder.toString();
                 apiService.chatStream(baseUrl, modelName, prompt, new ChatStreamListener() {

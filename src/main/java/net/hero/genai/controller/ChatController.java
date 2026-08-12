@@ -279,42 +279,13 @@ public final class ChatController {
             int idx = service.getCurrentStepIndex();
             if (idx >= 0) {
                 String oldOutput = service.getStepOutputs().get(idx);
-                service.getStepOutputs().set(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
+                service.setStepOutput(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
                 runActiveWorkflowStep();
             }
             return;
         }
 
-        // Process selected workflow manual override
-        String selectedWf = comboWorkflow.getSelectionModel().getSelectedItem();
-        if ("標準チャット (Standard)".equals(selectedWf)) {
-            executeStandardChat(promptText);
-            return;
-        } else if ("ソースコード作成・修正ワークフロー".equals(selectedWf)) {
-            Workflow matched = null;
-            for (Workflow wf : service.getPredefinedWorkflows()) {
-                if ("source-code-creation".equals(wf.id())) {
-                    matched = wf;
-                    break;
-                }
-            }
-            if (matched != null) {
-                service.setProposedWorkflow(matched);
-                service.setPendingUserRequest(promptText);
-                updateWorkflowPanelUI();
-                appendSystemInfoMessage("ソースコード作成・修正ワークフローを提案しました。開始するには承認してください。");
-            } else {
-                appendSystemInfoMessage("Error: Built-in source-code-creation workflow not found.");
-            }
-            return;
-        }
-
-        if (service.isStandardChatMode()) {
-            executeStandardChat(promptText);
-            return;
-        }
-
-        // Run Workflow Determination / Information Gathering Session
+        // Run Workflow Determination / Information Gathering Session for ALL non-active-workflow conversations
         runWorkflowDetermination(promptText);
     }
 
@@ -393,30 +364,20 @@ public final class ChatController {
 
                     service.clearDeterminationHistory();
 
-                    String decision = result.decision();
-                    if ("standard".equalsIgnoreCase(decision) || decision == null) {
-                        proposeStandardChat(finalUserRequest);
-                    } else if ("dynamic".equalsIgnoreCase(decision)) {
-                        appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
-                        service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
-                            if (wf != null) {
-                                service.setProposedWorkflow(wf);
-                                service.setPendingUserRequest(finalUserRequest);
-                                Platform.runLater(() -> {
-                                    updateWorkflowPanelUI();
-                                    appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
-                                });
-                            } else {
-                                Platform.runLater(() -> {
-                                    appendSystemInfoMessage("Failed to generate dynamic workflow. Proposing standard chat instead.");
-                                    proposeStandardChat(finalUserRequest);
-                                });
-                            }
-                        });
-                    } else {
+                    // Check manual override settings to execute according to user choice:
+                    String selectedWf = comboWorkflow.getSelectionModel().getSelectedItem();
+                    boolean forceStandard = "標準チャット (Standard)".equals(selectedWf) || service.isStandardChatMode();
+                    boolean forceSourceCode = "ソースコード作成・修正ワークフロー".equals(selectedWf);
+
+                    if (forceStandard) {
+                        // User forced standard chat: directly execute without showing proposal screen
+                        service.setStandardChatMode(true);
+                        executeStandardChatAfterDetermination(finalUserRequest);
+                    } else if (forceSourceCode) {
+                        // User forced Source Code Creation: propose the predefined source-code-creation workflow
                         Workflow matched = null;
                         for (Workflow wf : service.getPredefinedWorkflows()) {
-                            if (wf.id().equals(decision)) {
+                            if ("source-code-creation".equals(wf.id())) {
                                 matched = wf;
                                 break;
                             }
@@ -425,10 +386,50 @@ public final class ChatController {
                             service.setProposedWorkflow(matched);
                             service.setPendingUserRequest(finalUserRequest);
                             updateWorkflowPanelUI();
-                            appendSystemInfoMessage("Predefined workflow '" + matched.name() + "' proposed! Please approve to start executing.");
+                            appendSystemInfoMessage("ソースコード作成・修正ワークフローを提案しました。開始するには承認してください。");
                         } else {
-                            appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Proposing standard chat instead.");
+                            appendSystemInfoMessage("Error: Built-in source-code-creation workflow not found. Proposing standard chat instead.");
                             proposeStandardChat(finalUserRequest);
+                        }
+                    } else {
+                        // "自動判定 (Auto)" choice: proceed with the support AI's dynamic/predefined decision
+                        String decision = result.decision();
+                        if ("standard".equalsIgnoreCase(decision) || decision == null) {
+                            proposeStandardChat(finalUserRequest);
+                        } else if ("dynamic".equalsIgnoreCase(decision)) {
+                            appendSystemInfoMessage("Decision: Dynamic Workflow. Analyzing and generating steps...");
+                            service.generateDynamicWorkflow(finalUserRequest, baseUrl, activeModel, apiService, (wf) -> {
+                                if (wf != null) {
+                                    service.setProposedWorkflow(wf);
+                                    service.setPendingUserRequest(finalUserRequest);
+                                    Platform.runLater(() -> {
+                                        updateWorkflowPanelUI();
+                                        appendSystemInfoMessage("Custom workflow proposed! Please approve to start executing.");
+                                    });
+                                } else {
+                                    Platform.runLater(() -> {
+                                        appendSystemInfoMessage("Failed to generate dynamic workflow. Proposing standard chat instead.");
+                                        proposeStandardChat(finalUserRequest);
+                                    });
+                                }
+                            });
+                        } else {
+                            Workflow matched = null;
+                            for (Workflow wf : service.getPredefinedWorkflows()) {
+                                if (wf.id().equals(decision)) {
+                                    matched = wf;
+                                    break;
+                                }
+                            }
+                            if (matched != null) {
+                                service.setProposedWorkflow(matched);
+                                service.setPendingUserRequest(finalUserRequest);
+                                updateWorkflowPanelUI();
+                                appendSystemInfoMessage("Predefined workflow '" + matched.name() + "' proposed! Please approve to start executing.");
+                            } else {
+                                appendSystemInfoMessage("Matched workflow ID '" + decision + "' not found. Proposing standard chat instead.");
+                                proposeStandardChat(finalUserRequest);
+                            }
                         }
                     }
                 }
@@ -698,7 +699,13 @@ public final class ChatController {
             return;
         }
 
-        boolean hasNext = service.advanceStep();
+        boolean hasNext = true;
+        if (service.isClarificationActive()) {
+            service.setClarificationActive(false);
+        } else {
+            hasNext = service.advanceStep();
+        }
+
         if (!hasNext) {
             appendSystemInfoMessage("Workflow completed successfully!");
             updateWorkflowPanelUI();
@@ -743,7 +750,12 @@ public final class ChatController {
                         chatSession.addMessage(assistantMsg);
                         btnSend.setDisable(false);
                         updateWorkflowPanelUI();
-                        runActiveWorkflowStep();
+                        if (fullResponse.contains("CLARIFICATION_REQUIRED")) {
+                            service.setClarificationActive(true);
+                            appendSystemInfoMessage("AI has requested clarification. Please provide details to resume.");
+                        } else {
+                            runActiveWorkflowStep();
+                        }
                     });
                 }
 

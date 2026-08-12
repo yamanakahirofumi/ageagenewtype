@@ -258,4 +258,70 @@ public final class WorkflowServiceTest {
         assertFalse(result.fileAccessNeeded());
         assertNull(result.fileAccessPath());
     }
+
+    @Test
+    @DisplayName("ClarificationActive flag transitions should manage workflow index preservation")
+    public void startWorkflow_OnClarificationActive_ShouldManageIndexAndPreserve() {
+        // Arrange
+        service.loadBuiltInWorkflows();
+        Workflow wf = service.getPredefinedWorkflows().get(0);
+        service.startWorkflow(wf);
+
+        // Step 1 starts
+        assertTrue(service.advanceStep());
+        assertEquals(0, service.getCurrentStepIndex());
+
+        // LLM output is set, contains CLARIFICATION_REQUIRED.
+        // We set clarificationActive = true
+        service.setClarificationActive(true);
+        assertTrue(service.isClarificationActive());
+
+        // In ChatController runActiveWorkflowStep(), if isClarificationActive() is true,
+        // it sets clarificationActive to false, and does NOT advance step.
+        boolean hasNext = true;
+        if (service.isClarificationActive()) {
+            service.setClarificationActive(false);
+        } else {
+            hasNext = service.advanceStep();
+        }
+
+        // Assert that index is preserved (remains 0) and flag was reset
+        assertTrue(hasNext);
+        assertEquals(0, service.getCurrentStepIndex());
+        assertFalse(service.isClarificationActive());
+    }
+
+    @Test
+    @DisplayName("executeStep should include previous feedback as a revision block in the constructed prompt")
+    public void executeStep_WithPreviousOutputInCurrentStep_ShouldIncludeRevisionBlock() {
+        // Arrange
+        service.loadBuiltInWorkflows();
+        Workflow wf = service.getPredefinedWorkflows().get(0);
+        service.startWorkflow(wf);
+        assertTrue(service.advanceStep()); // Step index 0
+
+        // Simulate that stepOutputs at index 0 has some feedback/revision
+        service.setStepOutput(0, "[User Feedback]: Please add more details.\n\n[Previous output]: some code");
+
+        // We can subclass OllamaApiService to capture the prompt passed to chatStream
+        final String[] capturedPrompt = new String[1];
+        OllamaApiService mockApiService = new OllamaApiService() {
+            @Override
+            public void chatStream(String baseUrl, String modelName, String prompt, ChatStreamListener listener) {
+                capturedPrompt[0] = prompt;
+            }
+        };
+
+        // Act
+        service.executeStep("http://localhost:11434", "mock-llama3.2", mockApiService, new ChatStreamListener() {
+            @Override public void onNext(String token) {}
+            @Override public void onComplete(String fullResponse) {}
+            @Override public void onError(Throwable error) {}
+        }, () -> {});
+
+        // Assert
+        assertNotNull(capturedPrompt[0]);
+        assertTrue(capturedPrompt[0].contains("=== REVISION / FEEDBACK FOR THIS STEP ==="));
+        assertTrue(capturedPrompt[0].contains("[User Feedback]: Please add more details."));
+    }
 }
