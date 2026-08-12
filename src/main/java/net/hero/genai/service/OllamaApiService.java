@@ -22,7 +22,7 @@ import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class OllamaApiService {
+public class OllamaApiService {
 
     private static final Logger LOGGER = Logger.getLogger(OllamaApiService.class.getName());
     private static final List<String> MOCK_MODELS = List.of("mock-llama3.2", "mock-gemma2", "mock-mistral");

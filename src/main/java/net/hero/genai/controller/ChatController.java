@@ -279,7 +279,7 @@ public final class ChatController {
             int idx = service.getCurrentStepIndex();
             if (idx >= 0) {
                 String oldOutput = service.getStepOutputs().get(idx);
-                service.getStepOutputs().set(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
+                service.setStepOutput(idx, "[User Feedback]: " + promptText + "\n\n" + oldOutput);
                 runActiveWorkflowStep();
             }
             return;
@@ -698,7 +698,13 @@ public final class ChatController {
             return;
         }
 
-        boolean hasNext = service.advanceStep();
+        boolean hasNext = true;
+        if (service.isClarificationActive()) {
+            service.setClarificationActive(false);
+        } else {
+            hasNext = service.advanceStep();
+        }
+
         if (!hasNext) {
             appendSystemInfoMessage("Workflow completed successfully!");
             updateWorkflowPanelUI();
@@ -743,7 +749,12 @@ public final class ChatController {
                         chatSession.addMessage(assistantMsg);
                         btnSend.setDisable(false);
                         updateWorkflowPanelUI();
-                        runActiveWorkflowStep();
+                        if (fullResponse.contains("CLARIFICATION_REQUIRED")) {
+                            service.setClarificationActive(true);
+                            appendSystemInfoMessage("AI has requested clarification. Please provide details to resume.");
+                        } else {
+                            runActiveWorkflowStep();
+                        }
                     });
                 }
 
