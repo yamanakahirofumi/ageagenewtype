@@ -45,7 +45,7 @@ public class OllamaApiService {
             final HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl))
                     .GET()
-                    .timeout(Duration.ofSeconds(2))
+                    .timeout(Duration.ofSeconds(5))
                     .build();
             final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             // Ollama usually returns "Ollama is running" at the root path
@@ -69,7 +69,7 @@ public class OllamaApiService {
             final HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(baseUrl + "/api/tags"))
                     .GET()
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(Duration.ofSeconds(10))
                     .build();
             final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
@@ -105,7 +105,7 @@ public class OllamaApiService {
             final ChatLanguageModel model = OllamaChatModel.builder()
                     .baseUrl(baseUrl)
                     .modelName(modelName)
-                    .timeout(Duration.ofSeconds(60))
+                    .timeout(Duration.ofSeconds(180))
                     .build();
 
             final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
@@ -134,7 +134,7 @@ public class OllamaApiService {
             final StreamingChatLanguageModel model = OllamaStreamingChatModel.builder()
                     .baseUrl(baseUrl)
                     .modelName(modelName)
-                    .timeout(Duration.ofSeconds(60))
+                    .timeout(Duration.ofSeconds(180))
                     .build();
 
             final WorkspaceAgent agent = AiServices.builder(WorkspaceAgent.class)
