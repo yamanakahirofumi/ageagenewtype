@@ -271,10 +271,22 @@ public final class SecuritySettingsController {
     @FXML
     private void handleSaveRules() {
         securityService.setRules(new ArrayList<>(ruleList));
-        saveToWorkspaceIfAvailable();
 
-        final Alert alert = new Alert(Alert.AlertType.INFORMATION, "ルールを保存しました。");
-        alert.showAndWait();
+        final File workspace = securityService.getActiveWorkspace();
+        if (workspace != null) {
+            try {
+                securityService.saveToFile(new File(workspace, "security_rules.conf"));
+                final Alert alert = new Alert(Alert.AlertType.INFORMATION, "ルールを保存しました。");
+                alert.showAndWait();
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to save security rules to security_rules.conf", e);
+                final Alert alert = new Alert(Alert.AlertType.ERROR, "ルールの保存に失敗しました: " + e.getMessage());
+                alert.showAndWait();
+            }
+        } else {
+            final Alert alert = new Alert(Alert.AlertType.WARNING, "アクティブなワークスペースが選択されていないため、設定ファイル「security_rules.conf」に保存できません。");
+            alert.showAndWait();
+        }
     }
 
     @FXML
@@ -322,7 +334,11 @@ public final class SecuritySettingsController {
     private void saveToWorkspaceIfAvailable() {
         final File workspace = securityService.getActiveWorkspace();
         if (workspace != null) {
-            securityService.saveToFile(new File(workspace, "security_rules.conf"));
+            try {
+                securityService.saveToFile(new File(workspace, "security_rules.conf"));
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to auto-save rules to workspace", e);
+            }
         }
     }
 
