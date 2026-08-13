@@ -1,5 +1,6 @@
 package net.hero.genai.controller;
 
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -13,7 +14,6 @@ import javafx.scene.control.TableCell;
 import javafx.scene.control.TableColumn;
 import javafx.scene.control.TabPane;
 import javafx.scene.control.TableView;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.cell.PropertyValueFactory;
 import net.hero.genai.model.AuditLogEntry;
@@ -34,12 +34,12 @@ public final class SecuritySettingsController {
 
     private static final Logger LOGGER = Logger.getLogger(SecuritySettingsController.class.getName());
 
-    @FXML private CheckBox chkEnableSecurity;
     @FXML private ComboBox<String> comboAutoRestore;
     @FXML private TabPane tabPane;
 
     // Rules Tab
     @FXML private TableView<SecurityRule> tblRules;
+    @FXML private TableColumn<SecurityRule, Boolean> colRuleEnabled;
     @FXML private TableColumn<SecurityRule, String> colRuleCategory;
     @FXML private TableColumn<SecurityRule, String> colRuleType;
     @FXML private TableColumn<SecurityRule, String> colRulePattern;
@@ -52,11 +52,7 @@ public final class SecuritySettingsController {
 
     @FXML private Button btnDeleteRule;
     @FXML private Button btnSaveRules;
-
-    // Direct Edit Tab
-    @FXML private TextArea txtRawConf;
     @FXML private Button btnResetConf;
-    @FXML private Button btnSaveRawConf;
 
     // Audit Logs Tab
     @FXML private TableView<AuditLogEntry> tblAuditLogs;
@@ -72,49 +68,27 @@ public final class SecuritySettingsController {
     private final ObservableList<SecurityRule> ruleList = FXCollections.observableArrayList();
     private final ObservableList<AuditLogEntry> auditLogList = FXCollections.observableArrayList();
 
-    private boolean isUpdatingCheckbox = false;
-
     @FXML
     public void initialize() {
         LOGGER.log(Level.INFO, "Initializing SecuritySettingsController...");
 
-        // Setup Checkbox & Restore ComboBox
-        chkEnableSecurity.setSelected(securityService.isEnabled());
-        chkEnableSecurity.selectedProperty().addListener((obs, oldVal, newVal) -> {
-            if (isUpdatingCheckbox) {
-                return;
-            }
-            if (!newVal) {
-                // Confirm disabling security
-                final Alert alert = new Alert(Alert.AlertType.WARNING);
-                alert.setTitle("セキュリティ制限の無効化");
-                alert.setHeaderText("警告: セキュリティ制限の無効化");
-                alert.setContentText("セキュリティ制限を無効化すると、AIエージェントによるファイルの破壊、" +
-                        "不要なコマンド実行、外部へのデータ送信のリスクが高まります。無効化しますか？");
-
-                final ButtonType btnConfirm = new ButtonType("無効化する (非推奨)", ButtonType.OK.getButtonData());
-                final ButtonType btnCancel = new ButtonType("キャンセル", ButtonType.CANCEL.getButtonData());
-                alert.getButtonTypes().setAll(btnCancel, btnConfirm);
-
-                final Optional<ButtonType> result = alert.showAndWait();
-                if (result.isPresent() && result.get() == btnConfirm) {
-                    securityService.setEnabled(false);
-                } else {
-                    // Revert checkbox state
-                    isUpdatingCheckbox = true;
-                    chkEnableSecurity.setSelected(true);
-                    isUpdatingCheckbox = false;
+        // Explicitly load security_rules.conf content from workspace if available
+        final File workspace = securityService.getActiveWorkspace();
+        if (workspace != null) {
+            final File confFile = new File(workspace, "security_rules.conf");
+            if (confFile.exists()) {
+                try {
+                    securityService.loadFromFile(confFile);
+                    LOGGER.log(Level.INFO, "Loaded active rules from security_rules.conf upon opening settings.");
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to load rules from security_rules.conf", e);
                 }
-            } else {
-                securityService.setEnabled(true);
             }
-        });
+        }
 
-        // Register callback to update checkbox state when timer auto-restores
+        // Register callback to update rules and state when timer auto-restores
         securityService.registerOnSecurityStateChanged(() -> {
-            isUpdatingCheckbox = true;
-            chkEnableSecurity.setSelected(securityService.isEnabled());
-            isUpdatingCheckbox = false;
+            ruleList.setAll(securityService.getRules());
         });
 
         // Populate Auto Restore Combobox
@@ -126,12 +100,68 @@ public final class SecuritySettingsController {
             }
         });
 
-        // Setup Rules Table
-        colRuleCategory.setCellValueFactory(new PropertyValueFactory<>("category"));
+        // Setup Rules Table Column for CheckBoxes
+        colRuleEnabled.setCellValueFactory(cellData -> new SimpleBooleanProperty(cellData.getValue().enabled()));
+        colRuleEnabled.setCellFactory(column -> new TableCell<>() {
+            private final CheckBox checkBox = new CheckBox();
+            private boolean isUpdating = false;
+
+            {
+                checkBox.setOnAction(event -> {
+                    if (isUpdating) {
+                        return;
+                    }
+                    final SecurityRule rule = getTableRow().getItem();
+                    if (rule != null) {
+                        final boolean newVal = checkBox.isSelected();
+                        if (!newVal) {
+                            // Confirm disabling individual security rule
+                            final Alert alert = new Alert(Alert.AlertType.WARNING);
+                            alert.setTitle("セキュリティ制限 of ルール");
+                            alert.setHeaderText("警告: セキュリティ制限の無効化");
+                            alert.setContentText("セキュリティ制限を無効化すると、AIエージェントによるファイルの破壊、" +
+                                    "不要なコマンド実行、外部へのデータ送信のリスクが高まります。無効化しますか？");
+
+                            final ButtonType btnConfirm = new ButtonType("無効化する (非推奨)", ButtonType.OK.getButtonData());
+                            final ButtonType btnCancel = new ButtonType("キャンセル", ButtonType.CANCEL.getButtonData());
+                            alert.getButtonTypes().setAll(btnCancel, btnConfirm);
+
+                            final Optional<ButtonType> result = alert.showAndWait();
+                            if (result.isPresent() && result.get() == btnConfirm) {
+                                updateRuleEnabledState(rule, false);
+                            } else {
+                                // Revert checkbox state
+                                isUpdating = true;
+                                checkBox.setSelected(true);
+                                isUpdating = false;
+                            }
+                        } else {
+                            updateRuleEnabledState(rule, true);
+                        }
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(Boolean item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setGraphic(null);
+                } else {
+                    isUpdating = true;
+                    checkBox.setSelected(item);
+                    isUpdating = false;
+                    setGraphic(checkBox);
+                }
+            }
+        });
+
+        // Setup Rules Table columns with lambda cell factories supporting Java Record accessor syntax
+        colRuleCategory.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().category()));
         colRuleType.setCellValueFactory(cellData -> new SimpleStringProperty(
                 cellData.getValue().isDeny() ? "拒否 (Deny)" : "許可 (Allow)"
         ));
-        colRulePattern.setCellValueFactory(new PropertyValueFactory<>("pattern"));
+        colRulePattern.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().pattern()));
 
         ruleList.setAll(securityService.getRules());
         tblRules.setItems(ruleList);
@@ -139,9 +169,6 @@ public final class SecuritySettingsController {
         // Preload add-form category combo
         comboNewCategory.getItems().addAll("file-access", "program-execution", "http-url");
         comboNewCategory.getSelectionModel().select(0);
-
-        // Setup Direct Edit Conf
-        updateRawConfTextArea();
 
         // Setup Audit Logs Table
         colAuditTimestamp.setCellValueFactory(new PropertyValueFactory<>("timestamp"));
@@ -180,6 +207,19 @@ public final class SecuritySettingsController {
         tblAuditLogs.setItems(auditLogList);
     }
 
+    private void updateRuleEnabledState(final SecurityRule oldRule, final boolean enabled) {
+        final int index = ruleList.indexOf(oldRule);
+        if (index >= 0) {
+            final SecurityRule updatedRule = new SecurityRule(
+                    oldRule.category(),
+                    oldRule.pattern(),
+                    oldRule.isDeny(),
+                    enabled
+            );
+            ruleList.set(index, updatedRule);
+        }
+    }
+
     private int parseAutoRestoreMinutes(final String label) {
         return switch (label) {
             case "5分" -> 5;
@@ -213,7 +253,7 @@ public final class SecuritySettingsController {
             return;
         }
 
-        final SecurityRule rule = new SecurityRule(category, pattern.trim(), isDeny);
+        final SecurityRule rule = new SecurityRule(category, pattern.trim(), isDeny, true);
         ruleList.add(rule);
         tblRules.getSelectionModel().select(rule);
         txtNewPattern.clear();
@@ -231,44 +271,32 @@ public final class SecuritySettingsController {
     @FXML
     private void handleSaveRules() {
         securityService.setRules(new ArrayList<>(ruleList));
-        saveToWorkspaceIfAvailable();
-        updateRawConfTextArea();
 
-        final Alert alert = new Alert(Alert.AlertType.INFORMATION, "ルールを保存しました。");
-        alert.showAndWait();
+        final File workspace = securityService.getActiveWorkspace();
+        if (workspace != null) {
+            try {
+                securityService.saveToFile(new File(workspace, "security_rules.conf"));
+                final Alert alert = new Alert(Alert.AlertType.INFORMATION, "ルールを保存しました。");
+                alert.showAndWait();
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to save security rules to security_rules.conf", e);
+                final Alert alert = new Alert(Alert.AlertType.ERROR, "ルールの保存に失敗しました: " + e.getMessage());
+                alert.showAndWait();
+            }
+        } else {
+            final Alert alert = new Alert(Alert.AlertType.WARNING, "アクティブなワークスペースが選択されていないため、設定ファイル「security_rules.conf」に保存できません。");
+            alert.showAndWait();
+        }
     }
 
     @FXML
     private void handleResetConf() {
         securityService.loadDefaultRules();
         ruleList.setAll(securityService.getRules());
-        updateRawConfTextArea();
         saveToWorkspaceIfAvailable();
 
         final Alert alert = new Alert(Alert.AlertType.INFORMATION, "デフォルトルールにリセットしました。");
         alert.showAndWait();
-    }
-
-    @FXML
-    private void handleSaveRawConf() {
-        final String rawText = txtRawConf.getText();
-        try {
-            // Write to a temporary file, parse using securityService, then load back
-            final File temp = File.createTempFile("security_rules_temp", ".conf");
-            temp.deleteOnExit();
-            Files.writeString(temp.toPath(), rawText, StandardCharsets.UTF_8);
-
-            securityService.loadFromFile(temp);
-            ruleList.setAll(securityService.getRules());
-            saveToWorkspaceIfAvailable();
-
-            final Alert alert = new Alert(Alert.AlertType.INFORMATION, "直接編集した設定を反映して保存しました。");
-            alert.showAndWait();
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to apply raw configuration edits", e);
-            final Alert alert = new Alert(Alert.AlertType.ERROR, "設定の保存中にエラーが発生しました: " + e.getMessage());
-            alert.showAndWait();
-        }
     }
 
     @FXML
@@ -291,7 +319,7 @@ public final class SecuritySettingsController {
             }
         }
 
-        final SecurityRule newRule = new SecurityRule(entry.category(), pattern, false);
+        final SecurityRule newRule = new SecurityRule(entry.category(), pattern, false, true);
         ruleList.add(newRule);
         tblRules.getSelectionModel().select(newRule);
 
@@ -303,26 +331,14 @@ public final class SecuritySettingsController {
         alert.showAndWait();
     }
 
-    private void updateRawConfTextArea() {
-        final List<SecurityRule> rules = securityService.getRules();
-        final List<String> lines = new ArrayList<>();
-        final String[] categories = {"file-access", "program-execution", "http-url"};
-        for (final String category : categories) {
-            lines.add("[" + category + "]");
-            for (final SecurityRule rule : rules) {
-                if (rule.category().equalsIgnoreCase(category)) {
-                    lines.add(rule.toLine());
-                }
-            }
-            lines.add("");
-        }
-        txtRawConf.setText(String.join("\n", lines));
-    }
-
     private void saveToWorkspaceIfAvailable() {
         final File workspace = securityService.getActiveWorkspace();
         if (workspace != null) {
-            securityService.saveToFile(new File(workspace, "security_rules.conf"));
+            try {
+                securityService.saveToFile(new File(workspace, "security_rules.conf"));
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to auto-save rules to workspace", e);
+            }
         }
     }
 

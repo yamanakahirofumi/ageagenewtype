@@ -35,7 +35,6 @@ public final class SecurityService {
         return INSTANCE;
     }
 
-    private boolean enabled = true;
     private int autoRestoreMinutes = 10; // Default: 10 minutes
     private final List<SecurityRule> rules = new CopyOnWriteArrayList<>();
     private final List<AuditLogEntry> auditLogs = new CopyOnWriteArrayList<>();
@@ -99,27 +98,43 @@ public final class SecurityService {
         }
     }
 
+    /**
+     * Helper to check if security restrictions are active.
+     * Returns true if all rules are enabled, and false if any rule is disabled.
+     */
     public boolean isEnabled() {
-        return enabled;
+        if (rules.isEmpty()) {
+            return true;
+        }
+        for (final SecurityRule rule : rules) {
+            if (!rule.enabled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
-     * Sets whether security is enabled. If disabled, a background restoration timer will be scheduled.
+     * Enables or disables all security rules collectively.
      */
     public synchronized void setEnabled(final boolean enabled) {
-        if (this.enabled == enabled) {
-            return;
+        boolean changed = false;
+        for (int i = 0; i < rules.size(); i++) {
+            final SecurityRule r = rules.get(i);
+            if (r.enabled() != enabled) {
+                rules.set(i, new SecurityRule(r.category(), r.pattern(), r.isDeny(), enabled));
+                changed = true;
+            }
         }
-        this.enabled = enabled;
-        LOGGER.log(Level.INFO, "Security enabled set to: " + enabled);
-
-        if (!enabled) {
-            scheduleAutoRestoration();
-        } else {
-            cancelAutoRestoration();
+        if (changed) {
+            LOGGER.log(Level.INFO, "Security rules enabled status collectively set to: " + enabled);
+            if (!enabled) {
+                scheduleAutoRestoration();
+            } else {
+                cancelAutoRestoration();
+            }
+            triggerStateChanged();
         }
-
-        triggerStateChanged();
     }
 
     public int getAutoRestoreMinutes() {
@@ -129,7 +144,14 @@ public final class SecurityService {
     public void setAutoRestoreMinutes(final int minutes) {
         this.autoRestoreMinutes = minutes;
         LOGGER.log(Level.INFO, "Auto restore minutes set to: " + minutes);
-        if (!enabled) {
+        boolean hasDisabled = false;
+        for (final SecurityRule rule : rules) {
+            if (!rule.enabled()) {
+                hasDisabled = true;
+                break;
+            }
+        }
+        if (hasDisabled) {
             // Re-schedule based on new minutes
             scheduleAutoRestoration();
         }
@@ -143,6 +165,19 @@ public final class SecurityService {
         this.rules.clear();
         this.rules.addAll(newRules);
         LOGGER.log(Level.INFO, "Security rules updated. Count: " + newRules.size());
+
+        boolean hasDisabled = false;
+        for (final SecurityRule rule : newRules) {
+            if (!rule.enabled()) {
+                hasDisabled = true;
+                break;
+            }
+        }
+        if (hasDisabled) {
+            scheduleAutoRestoration();
+        } else {
+            cancelAutoRestoration();
+        }
     }
 
     public List<AuditLogEntry> getAuditLogs() {
@@ -176,8 +211,15 @@ public final class SecurityService {
         LOGGER.log(Level.INFO, "Scheduling auto-restoration in " + autoRestoreMinutes + " minutes");
         restoreTaskFuture = scheduler.schedule(() -> {
             synchronized (SecurityService.this) {
-                if (!enabled) {
-                    enabled = true;
+                boolean changed = false;
+                for (int i = 0; i < rules.size(); i++) {
+                    final SecurityRule r = rules.get(i);
+                    if (!r.enabled()) {
+                        rules.set(i, new SecurityRule(r.category(), r.pattern(), r.isDeny(), true));
+                        changed = true;
+                    }
+                }
+                if (changed) {
                     LOGGER.log(Level.INFO, "Security automatically re-enabled by restoration timer.");
                     triggerStateChanged();
                     if (onAutoRestoreCallback != null) {
@@ -204,7 +246,15 @@ public final class SecurityService {
      * @return true if permitted, false if blocked
      */
     public boolean checkPermission(final String category, final String action, final String workspaceDir) {
-        if (!enabled) {
+        // If ALL rules are disabled, we bypass checks entirely and return true!
+        boolean allDisabled = true;
+        for (final SecurityRule rule : rules) {
+            if (rule.enabled()) {
+                allDisabled = false;
+                break;
+            }
+        }
+        if (!rules.isEmpty() && allDisabled) {
             logAudit(category, action, "ALLOW (Bypassed)");
             return true;
         }
@@ -213,6 +263,9 @@ public final class SecurityService {
         final String resolvedWorkspace = workspaceDir != null ? normalizePath(workspaceDir) : "";
 
         for (final SecurityRule rule : rules) {
+            if (!rule.enabled()) {
+                continue;
+            }
             if (!rule.category().equalsIgnoreCase(category)) {
                 continue;
             }
@@ -293,7 +346,11 @@ public final class SecurityService {
             for (String line : lines) {
                 line = line.trim();
                 if (line.isEmpty() || line.startsWith("#") || line.startsWith(";")) {
-                    continue;
+                    if (line.startsWith("#inactive#") && currentCategory != null) {
+                        // Continue to parse it
+                    } else {
+                        continue;
+                    }
                 }
 
                 if (line.startsWith("[") && line.endsWith("]")) {
@@ -302,13 +359,19 @@ public final class SecurityService {
                 }
 
                 if (currentCategory != null) {
-                    boolean isDeny = false;
-                    String pattern = line;
-                    if (line.startsWith("!")) {
-                        isDeny = true;
-                        pattern = line.substring(1).trim();
+                    boolean enabled = true;
+                    String cleanLine = line;
+                    if (cleanLine.startsWith("#inactive#")) {
+                        enabled = false;
+                        cleanLine = cleanLine.substring("#inactive#".length()).trim();
                     }
-                    parsedRules.add(new SecurityRule(currentCategory, pattern, isDeny));
+                    boolean isDeny = false;
+                    String pattern = cleanLine;
+                    if (cleanLine.startsWith("!")) {
+                        isDeny = true;
+                        pattern = cleanLine.substring(1).trim();
+                    }
+                    parsedRules.add(new SecurityRule(currentCategory, pattern, isDeny, enabled));
                 }
             }
 
@@ -338,7 +401,8 @@ public final class SecurityService {
                 lines.add("[" + category + "]");
                 for (final SecurityRule rule : rules) {
                     if (rule.category().equalsIgnoreCase(category)) {
-                        lines.add(rule.toLine());
+                        String line = (rule.enabled() ? "" : "#inactive#") + rule.toLine();
+                        lines.add(line);
                     }
                 }
                 lines.add(""); // Empty line between sections
