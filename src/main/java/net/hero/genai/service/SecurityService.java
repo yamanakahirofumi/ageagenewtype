@@ -38,6 +38,7 @@ public final class SecurityService {
     private int autoRestoreMinutes = 10; // Default: 10 minutes
     private final List<SecurityRule> rules = new CopyOnWriteArrayList<>();
     private final List<AuditLogEntry> auditLogs = new CopyOnWriteArrayList<>();
+    private final List<SecurityChecker> checkers = new CopyOnWriteArrayList<>();
     private File activeWorkspace;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -51,7 +52,45 @@ public final class SecurityService {
     private Runnable onAutoRestoreCallback;
 
     private SecurityService() {
+        // Register default checkers
+        checkers.add(new FileAccessSecurityChecker());
+        checkers.add(new ProgramExecutionSecurityChecker());
+        checkers.add(new HttpUrlSecurityChecker());
+
         loadDefaultRules();
+    }
+
+    /**
+     * Registers a custom security checker.
+     *
+     * @param checker the custom SecurityChecker to register
+     */
+    public void registerChecker(final SecurityChecker checker) {
+        if (checker != null) {
+            checkers.add(0, checker); // Add at the beginning to allow custom overrides
+            LOGGER.log(Level.INFO, "Registered custom SecurityChecker: " + checker.getClass().getName());
+        }
+    }
+
+    /**
+     * Unregisters a security checker.
+     *
+     * @param checker the SecurityChecker to unregister
+     */
+    public void unregisterChecker(final SecurityChecker checker) {
+        if (checker != null) {
+            checkers.remove(checker);
+            LOGGER.log(Level.INFO, "Unregistered SecurityChecker: " + checker.getClass().getName());
+        }
+    }
+
+    /**
+     * Returns a copy of the currently registered checkers.
+     *
+     * @return an immutable list of registered security checkers
+     */
+    public List<SecurityChecker> getCheckers() {
+        return List.copyOf(checkers);
     }
 
     /**
@@ -259,31 +298,15 @@ public final class SecurityService {
             return true;
         }
 
-        final String normalizedAction = normalizePath(action);
-        final String resolvedWorkspace = workspaceDir != null ? normalizePath(workspaceDir) : "";
-
-        for (final SecurityRule rule : rules) {
-            if (!rule.enabled()) {
-                continue;
-            }
-            if (!rule.category().equalsIgnoreCase(category)) {
-                continue;
-            }
-
-            // Resolve placeholder ${WORKSPACE_DIR} in pattern
-            String resolvedPattern = rule.pattern();
-            if (resolvedPattern.contains("${WORKSPACE_DIR}")) {
-                resolvedPattern = resolvedPattern.replace("${WORKSPACE_DIR}", resolvedWorkspace);
-            }
-            resolvedPattern = normalizePath(resolvedPattern);
-
-            if (matchesWildcard(resolvedPattern, normalizedAction)) {
-                if (rule.isDeny()) {
-                    logAudit(category, action, "DENY (Block)");
-                    return false;
-                } else {
+        for (final SecurityChecker checker : checkers) {
+            if (checker.supports(category)) {
+                final boolean permitted = checker.checkPermission(category, action, workspaceDir);
+                if (permitted) {
                     logAudit(category, action, "ALLOW");
                     return true;
+                } else {
+                    logAudit(category, action, "DENY (Block)");
+                    return false;
                 }
             }
         }

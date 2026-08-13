@@ -150,4 +150,64 @@ public final class SecurityServiceTest {
 
         assertTrue(allowed);
     }
+
+    @Test
+    @DisplayName("registering a custom checker should evaluate using that custom checker")
+    public void checkPermission_CustomCheckerRegistered_ShouldBeEvaluatedByCustomChecker() {
+        // Arrange
+        final SecurityService service = SecurityService.getInstance();
+        final SecurityChecker customChecker = new SecurityChecker() {
+            @Override
+            public boolean supports(String category) {
+                return "custom-category".equalsIgnoreCase(category);
+            }
+
+            @Override
+            public boolean checkPermission(String category, String action, String contextValue) {
+                return "safe-action".equalsIgnoreCase(action);
+            }
+        };
+
+        service.registerChecker(customChecker);
+
+        // Act & Assert
+        try {
+            assertTrue(service.checkPermission("custom-category", "safe-action", null));
+            assertFalse(service.checkPermission("custom-category", "dangerous-action", null));
+        } finally {
+            // Clean up
+            service.unregisterChecker(customChecker);
+        }
+    }
+
+    @Test
+    @DisplayName("unregistering a custom checker should fallback to default or fail gracefully")
+    public void checkPermission_CustomCheckerUnregistered_ShouldFallbackToDefaultCheckers() {
+        // Arrange
+        final SecurityService service = SecurityService.getInstance();
+        final SecurityChecker customChecker = new SecurityChecker() {
+            @Override
+            public boolean supports(String category) {
+                return "http-url".equalsIgnoreCase(category);
+            }
+
+            @Override
+            public boolean checkPermission(String category, String action, String contextValue) {
+                // block everything
+                return false;
+            }
+        };
+
+        service.registerChecker(customChecker);
+
+        // Act & Assert
+        // With custom checker registered, any http-url is blocked
+        assertFalse(service.checkPermission("http-url", "https://api.github.com/users/jules", null));
+
+        // Unregister
+        service.unregisterChecker(customChecker);
+
+        // Should now revert to default behavior (allowed by rule-based checker)
+        assertTrue(service.checkPermission("http-url", "https://api.github.com/users/jules", null));
+    }
 }
