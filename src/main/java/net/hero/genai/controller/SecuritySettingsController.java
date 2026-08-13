@@ -1,5 +1,6 @@
 package net.hero.genai.controller;
 
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -100,7 +101,7 @@ public final class SecuritySettingsController {
         });
 
         // Setup Rules Table Column for CheckBoxes
-        colRuleEnabled.setCellValueFactory(new PropertyValueFactory<>("enabled"));
+        colRuleEnabled.setCellValueFactory(cellData -> new SimpleBooleanProperty(cellData.getValue().enabled()));
         colRuleEnabled.setCellFactory(column -> new TableCell<>() {
             private final CheckBox checkBox = new CheckBox();
             private boolean isUpdating = false;
@@ -155,12 +156,12 @@ public final class SecuritySettingsController {
             }
         });
 
-        // Setup Rules Table
-        colRuleCategory.setCellValueFactory(new PropertyValueFactory<>("category"));
+        // Setup Rules Table columns with lambda cell factories supporting Java Record accessor syntax
+        colRuleCategory.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().category()));
         colRuleType.setCellValueFactory(cellData -> new SimpleStringProperty(
                 cellData.getValue().isDeny() ? "拒否 (Deny)" : "許可 (Allow)"
         ));
-        colRulePattern.setCellValueFactory(new PropertyValueFactory<>("pattern"));
+        colRulePattern.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().pattern()));
 
         ruleList.setAll(securityService.getRules());
         tblRules.setItems(ruleList);
