@@ -71,6 +71,20 @@ public final class SecuritySettingsController {
     public void initialize() {
         LOGGER.log(Level.INFO, "Initializing SecuritySettingsController...");
 
+        // Explicitly load security_rules.conf content from workspace if available
+        final File workspace = securityService.getActiveWorkspace();
+        if (workspace != null) {
+            final File confFile = new File(workspace, "security_rules.conf");
+            if (confFile.exists()) {
+                try {
+                    securityService.loadFromFile(confFile);
+                    LOGGER.log(Level.INFO, "Loaded active rules from security_rules.conf upon opening settings.");
+                } catch (Exception e) {
+                    LOGGER.log(Level.WARNING, "Failed to load rules from security_rules.conf", e);
+                }
+            }
+        }
+
         // Register callback to update rules and state when timer auto-restores
         securityService.registerOnSecurityStateChanged(() -> {
             ruleList.setAll(securityService.getRules());
