@@ -148,3 +148,52 @@ ${WORKSPACE_DIR}/docs/*
    - 拒否された操作の履歴を専用の監査ログ（またはアプリケーションログ）に記録します。
    - 出力内容：日時、エラー内容、試行された操作内容、適合した否定ルール（あれば）。
    - これにより、ユーザーおよび開発者は、AIエージェントがどのような文脈で制限を超えようとしたかを後から調査・分析できます。
+
+---
+
+## 8. 拡張可能な設計とインターフェース構造
+
+セキュリティマネージャは、ファイルアクセス以外の多様なツール（Webアクセス、外部コマンド実行など）への適用や、将来的な追加検証ロジック（引数のサニタイズ、DNS/SSRF対策など）を容易にするため、インターフェースを基本とした極めて拡張性の高い設計を採用しています。
+
+### 8.1 主要コンポーネント
+
+- **`SecurityChecker` (インターフェース)**
+  - セキュリティ検証の共通規格（コントラクト）を定義します。
+  - `supports(String category)`: 対象の検証カテゴリに対応しているかを判定します。
+  - `checkPermission(String category, String action, String contextValue)`: 具体的なアクションやパス、URLなどの権限を検証します。
+- **`AbstractRuleSecurityChecker` (抽象クラス)**
+  - `SecurityChecker` を実装し、ワイルドカードパターンやルール定義（許可／拒否）に基づいた一般的な適合評価アルゴリズムをカプセル化します。
+- **`FileAccessSecurityChecker` (実装クラス)**
+  - `"file-access"` カテゴリに特化し、OSのパス正規化や、プレースホルダー（`${WORKSPACE_DIR}`）の動的解決を担当します。
+- **`ProgramExecutionSecurityChecker` (実装クラス)**
+  - `"program-execution"` カテゴリに特化し、OSコマンドの検証を行います。将来的にはシェルインジェクションの防止や引数パターンの追加検証フックを備えています。
+- **`HttpUrlSecurityChecker` (実装クラス)**
+  - `"http-url"` カテゴリに特化し、接続先URLの検証を行います。将来的なSSRF対策や特定ドメインの追加検証フックを備えています。
+
+### 8.2 カスタムチェッカーの登録方法
+
+開発者は、標準のルールベース検証に加えて、独自のセキュリティチェッカー（例：より高度な接続先IPフィルタリング、実行コマンドの高度な引数チェックなど）を動的に追加登録できます。
+
+```java
+// カスタムチェッカーの作成例
+public class AdvancedWebAccessChecker implements SecurityChecker {
+    @Override
+    public boolean supports(String category) {
+        return "http-url".equalsIgnoreCase(category);
+    }
+
+    @Override
+    public boolean checkPermission(String category, String action, String contextValue) {
+        // 独自の高度なセキュリティチェックロジック（例：ドメイン・ブラックリスト等）
+        if (action.contains("malicious-site.com")) {
+            return false; // ブロック
+        }
+        return true; // 許可
+    }
+}
+
+// セキュリティサービスへの登録
+SecurityService.getInstance().registerChecker(new AdvancedWebAccessChecker());
+```
+
+登録されたチェッカーは、適合するカテゴリ（`supports`）の評価時に自動的に優先して呼び出され、強力で柔軟な多重防御（Defense in Depth）を容易に構築できます。

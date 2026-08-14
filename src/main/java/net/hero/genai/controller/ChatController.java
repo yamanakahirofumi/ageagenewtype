@@ -256,19 +256,9 @@ public final class ChatController {
             chatSession.addMessage(userMsg);
             appendMessageUI(userMsg);
 
-            StringBuilder response = new StringBuilder();
-            response.append("利用可能なワークフローの一覧は以下の通りです：\n\n");
-            for (Workflow wf : service.getPredefinedWorkflows()) {
-                response.append("■ ").append(wf.name()).append(" (ID: ").append(wf.id()).append(")\n");
-                response.append("  概要: ").append(wf.description()).append("\n");
-                response.append("  ステップ:\n");
-                for (net.hero.genai.model.WorkflowStep step : wf.steps()) {
-                    response.append("    フェーズ ").append(step.phase()).append(": ").append(step.name()).append(" [").append(step.type()).append("]\n");
-                }
-                response.append("\n");
-            }
+            final String response = net.hero.genai.service.SupportAiService.getInstance().invoke("list-workflows", null);
 
-            final Message systemMsg = new Message("assistant", response.toString(), LocalDateTime.now());
+            final Message systemMsg = new Message("assistant", response, LocalDateTime.now());
             chatSession.addMessage(systemMsg);
             appendMessageUI(systemMsg);
             return;
@@ -343,8 +333,14 @@ public final class ChatController {
                         File workspaceDir = SecurityService.getInstance().getActiveWorkspace();
                         if (workspaceDir != null) {
                             File file = new File(workspaceDir, result.fileAccessPath());
-                            boolean permitted = SecurityService.getInstance().checkPermission("file-access", file.getAbsolutePath(), workspaceDir.getAbsolutePath());
-                            if (permitted && file.exists() && file.isFile()) {
+                            final String checkArg = "file-access:" + file.getAbsolutePath();
+                            final String checkResult = net.hero.genai.service.SupportAiService.getInstance().invoke("security-check", checkArg);
+                            final boolean permitted = "PERMITTED".equals(checkResult);
+
+                            final String lookupResult = net.hero.genai.service.SupportAiService.getInstance().invoke("file-lookup", result.fileAccessPath());
+                            final boolean fileExists = "EXISTS".equals(lookupResult);
+
+                            if (permitted && fileExists && file.isFile()) {
                                 try {
                                     String fileContent = java.nio.file.Files.readString(file.toPath(), java.nio.charset.StandardCharsets.UTF_8);
                                     consolidatedRequest.append("\n=== FILE CONTEXT ATTACHMENT ===\n");
