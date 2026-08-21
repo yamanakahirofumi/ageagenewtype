@@ -12,6 +12,8 @@
 | ライブラリ | LangChain4j | 0.35.0 (または最新) | LLM統合フレームワーク (`langchain4j-ollama`) |
 | ライブラリ | JUnit 5 | 5.10.2 | |
 | ライブラリ | JaCoCo | -        | カバレッジ測定 |
-| ライブラリ | SQLite JDBC | -        | データベース接続用 |
+| ライブラリ | SQLite JDBC | 3.45.1.0 | データベース接続用 |
+| ライブラリ | JGit | 6.9.0 | Git操作用ライブラリ (`org.eclipse.jgit`) |
+| ライブラリ | SLF4J | 2.0.12 | ログ抽象化レイヤー (SLF4J-JDK14 経由で java.util.logging へ統合) |
 | ビルド・配布 | Maven | 3.9      | |
 | ビルド・配布 | jlink / jpackage | JDK 標準   | 配布用ランタイム作成 |
