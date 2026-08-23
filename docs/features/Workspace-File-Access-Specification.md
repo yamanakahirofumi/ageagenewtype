@@ -62,7 +62,7 @@ AIは以下の2つのツールを介してワークスペース内の情報に�
 - **ユーザー指示**: 「`WorkspaceFileService.java` でIOエラーが発生した時の処理はどうなっている？」
 - **AIの挙動**:
   1. 該当クラスのソースコードを読み取る必要があると判断。
-  2. `readFileContent("src/main/java/net/hero/genai/service/WorkspaceFileService.java")` ツールを呼び出す。
+  2. `readFileContent("src/main/java/net/hero/genai/workspace/WorkspaceFileService.java")` ツールを呼び出す。
   3. ツールが返したソースコードを解析。
   4. ユーザーに対して、例外のラップ処理やロギングの仕組みを的確に説明。
 

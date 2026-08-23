@@ -3,7 +3,7 @@
 <?import javafx.scene.control.TabPane?>
 <?import javafx.scene.layout.VBox?>
 
-<VBox prefHeight="600.0" prefWidth="550.0" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.controller.EditorController">
+<VBox prefHeight="600.0" prefWidth="550.0" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.workspace.EditorController">
     <children>
         <TabPane fx:id="tabPane" prefHeight="200.0" prefWidth="200.0" tabClosingPolicy="ALL_TABS" VBox.vgrow="ALWAYS" />
     </children>

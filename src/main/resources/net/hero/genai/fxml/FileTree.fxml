@@ -6,7 +6,7 @@
 <?import javafx.scene.control.TreeView?>
 <?import javafx.scene.layout.VBox?>
 
-<VBox prefHeight="600.0" prefWidth="250.0" spacing="10.0" style="-fx-background-color: #181818;" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.controller.FileTreeController">
+<VBox prefHeight="600.0" prefWidth="250.0" spacing="10.0" style="-fx-background-color: #181818;" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.workspace.FileTreeController">
     <padding>
         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
     </padding>

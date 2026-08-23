@@ -10,7 +10,7 @@
 <?import javafx.scene.layout.Pane?>
 <?import javafx.scene.layout.VBox?>
 
-<VBox prefHeight="600.0" prefWidth="400.0" spacing="10.0" style="-fx-background-color: #1e1e1e;" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.controller.ChatController">
+<VBox prefHeight="600.0" prefWidth="400.0" spacing="10.0" style="-fx-background-color: #1e1e1e;" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.chat.ChatController">
     <padding>
         <Insets bottom="10.0" left="10.0" right="10.0" top="10.0" />
     </padding>

@@ -14,7 +14,7 @@
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.VBox?>
 
-<BorderPane prefHeight="550.0" prefWidth="700.0" style="-fx-background-color: #1e1e1e;" stylesheets="/net/hero/genai/css/style.css" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.controller.SecuritySettingsController">
+<BorderPane prefHeight="550.0" prefWidth="700.0" style="-fx-background-color: #1e1e1e;" stylesheets="/net/hero/genai/css/style.css" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="net.hero.genai.security.SecuritySettingsController">
     <top>
         <VBox spacing="12.0" style="-fx-background-color: #252526; -fx-border-color: #3c3c3c; -fx-border-width: 0 0 1 0;">
             <padding>
