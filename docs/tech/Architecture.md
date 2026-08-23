@@ -1,9 +1,9 @@
 # アーキテクチャ設計
 
-本アプリケーションでは、LangChain4j ライブラリを経由してローカル環境で動作する Ollama を生成AIエンジンとして活用し、IDE風の統合開発・対話インターフェース（ファイルツリー、エディタ、チャット部）を提供します。柔軟な機能拡張に対応するため、標準的な MVC (Model-View-Controller) パターンを採用し、各層の責務を明確に分離します。
+本アプリケーションでは、LangChain4j ライブラリを経由してローカル環境で動作する Ollama を生成AIエンジンとして活用し、IDE風の統合開発・対話インターフェース（ファイルツリー、エディタ、チャット部）を提供します。保守性と拡張性を高めるため、コントローラやサービスなどのレイヤー別ではなく、**機能（ドメイン・フィーチャー）単位**で Java パッケージ（Namespace）を分割する構造を採用します。
 
 ## 1. ディレクトリ・パッケージ構造
-標準的な Maven 構造および JavaFX のモジュール・システム（JPMS）に準拠した構成を採用します。
+標準的な Maven 構造および JavaFX のモジュール・システム（JPMS）に準拠した機能別パッケージ構成を採用します。
 
 ```
 .
@@ -14,50 +14,68 @@
 │   │   │   ├── module-info.java  # モジュール定義
 │   │   │   └── net.hero.genai
 │   │   │       ├── Main.java     # エントリーポイント
-│   │   │       ├── model/        # ドメインモデル・ビジネスロジック
-│   │   │       │   ├── prompt/   # プロンプト、対話履歴、テンプレートの定義
-│   │   │       │   └── generation/ # テキスト生成、推論・処理ロジック
-│   │   │       ├── view/         # JavaFX FXML および カスタムコントロール
-│   │   │       ├── controller/   # UI 制御（FXML Controller）
-│   │   │       ├── service/      # 外部API通信、DB・ファイル入出力
-│   │   │       └── util/         # 共通ユーティリティ（日付、テキスト処理）
+│   │   │       ├── chat/         # チャット機能 (ChatController, ChatSession, Message)
+│   │   │       ├── git/          # Git連携機能 (GitController, GitService, GitStatus)
+│   │   │       ├── ollama/       # Ollama通信機能 (OllamaConfigController, OllamaApiService, OllamaConfig, ChatStreamListener)
+│   │   │       ├── security/     # セキュリティマネージャ機能 (SecuritySettingsController, SecurityService, SecurityRule, AuditLogEntry)
+│   │   │       ├── supportai/    # サポートAI Capability機能 (SupportAiService, SupportAICapability, 各Capability実装)
+│   │   │       ├── workflow/     # AIワークフローエンジン機能 (WorkflowService, Workflow, WorkflowStep, WorkflowStepStatus)
+│   │   │       └── workspace/    # ワークスペース・エディタ機能 (MainWorkspaceController, FileTreeController, EditorController, WorkspaceFile, WorkspaceFileService, WorkspaceFileTools, WorkspaceAgent)
 │   │   └── resources
 │   │       └── net.hero.genai
 │   │           ├── fxml/         # UI レイアウト
 │   │           └── css/          # スタイルシート
 │   └── test
 │       └── java
-│           └── net.hero.genai    # ユニットテスト
+│           └── net.hero.genai    # 機能別に分割されたユニットテスト
 ```
 
-## 2. 主要コンポーネントの責務
+## 2. 主要機能パッケージの責務
 
-### 2.1 Model 層
-- **WorkspaceFile**: ワークスペース内のファイルおよびディレクトリ構造を保持・管理するドメインモデル。
-- **ChatSession**: ユーザーの対話セッション全体の集約ルート。対話履歴、使用中の Ollama モデル、プロンプトコンテキストを管理します。
-- **Prompt**: プロンプトテンプレートや指示文情報を表す record / class。ファイルコンテキストの変数挿入に対応 (`PromptTemplate` の活用)。
-- **Message**: ユーザーの入力文、Ollama からの AI 応答メッセージ、モデル名や評価パラメータを表す record。
-- **GenerationEngine**: LangChain4j の抽象化モデル (`ChatLanguageModel`, `StreamingChatLanguageModel`) を利用し、コンテキスト構築、プロンプト条件適用、AIテキスト生成・ストリーミング処理をカプセル化したコンポーネント。
+### 2.1 chat (チャット機能)
+- **ChatController**: チャット画面の UI 制御、プロンプト送信、モデル・ワークフロー選択およびストリーミング応答描画。
+- **ChatSession**: 対話セッション情報および対話履歴メッセージの集約管理。
+- **Message**: ユーザー入力および AI 応答メッセージを表す不変ドメインモデル (`record`)。
 
-### 2.2 View 層
-IDE 風の3分割レイアウトを基本構造として構成します。
-- **FileTreeView (ファイルツリー部)**: ワークスペース内のファイル・フォルダ構造を表示するツリービューコンポーネント (`FileTree.fxml`)。
-- **EditorView (エディタ部)**: 選択されたファイルの内容やプロンプトテンプレートを閲覧・編集するテキストエディタコンポーネント (`Editor.fxml`)。
-- **ChatView (チャット部)**: Ollama との対話履歴、入力プロンプト、モデル選択、応答ストリーミング表示を行うチャット UI コンポーネント (`ChatView.fxml`)。
-- **MainWorkspaceView**: 上記3つのビューを `SplitPane` により IDE 風レイアウトに統合するメイン画面 (`MainWorkspace.fxml`)。
+### 2.2 git (Git 連携機能)
+- **GitController**: Git パネル UI 制御、ブランチ切り替え、ステージング選択、コミット/プッシュ操作処理。
+- **GitService**: JGit を用いたリポジトリ操作、ステータス取得、ブランチ管理・リモート連携。
+- **GitStatus**: リポジトリの各種変更状態を表すドメインモデル (`record`)。
 
-### 2.3 Controller 層
-- **MainWorkspaceController**: 全体レイアウト（SplitPane）の制御および各領域（ファイルツリー、エディタ、チャット部）間のイベント調整を担当します。
-- **FileTreeController**: ファイルツリーの操作（ファイル選択、追加、削除など）イベントを処理します。
-- **EditorController**: エディタのファイル読み込み、変更検出、保存イベントを処理します。
-- **ChatController**: チャット入力、モデル切り替え、LangChain4j を通じた非同期通信による応答描画を管理します。
+### 2.3 ollama (Ollama 通信機能)
+- **OllamaConfigController**: Ollama 接続設定 UI の制御および接続テストの実行。
+- **OllamaApiService**: LangChain4j (`langchain4j-ollama`) 経由での Ollama 連携、モデル取得、テキスト生成およびストリーミング制御。
+- **OllamaConfig**: Ollama 接続設定情報を保持するデータモデル。
+- **ChatStreamListener**: ストリーミング応答受食用リスナーインターフェース。
 
-### 2.4 Service 層
-- **OllamaApiService**: LangChain4j (`langchain4j-ollama`) を経由して Ollama サービスと連携し、モデル取得 (`OllamaModels`)、プロンプト送信、応答ストリーミング (`StreamingChatLanguageModel` / `TokenStream`) を制御するサービス。
-- **WorkspaceFileService**: ワークスペース内のファイル読み書き、ディレクトリツリー構築を担当するサービス。
-- **PersistenceService**: SQLite への対話履歴・設定情報の永続化を担当します。詳細は [データベース選定方針](./Database-Selection.md) を参照。
+### 2.4 security (セキュリティマネージャ機能)
+- **SecuritySettingsController**: セキュリティ設定・ルール編集および監査ログ表示 UI 制御。
+- **SecurityService**: セキュリティルール (`security_rules.conf`) の読み込み・検証・保存、パーミッション判定および監査ログ記録。
+- **SecurityRule**: セキュリティルール定義モデル (`record`)。
+- **AuditLogEntry**: セキュリティ判定の監査ログエントリモデル (`record`)。
+
+### 2.5 supportai (サポート AI Capability 機能)
+- **SupportAiService**: サポート AI が利用可能な Capability の登録・呼び出しの統合管理サービス。
+- **SupportAICapability**: サポート AI 拡張機能の共通インターフェース。
+- **Capability 実装群**: `security-check`, `list-workflows`, `file-lookup`, `git-status`, `file-read`, `directory-list` などの個別動的機能プラグイン。
+
+### 2.6 workflow (AI ワークフローエンジン機能)
+- **WorkflowService**: 組み込み/カスタムワークフローのロード、自動判定/対話型セッション、多段階タスク実行、自動検証・ループバック制御。
+- **Workflow**: ワークフロー定義を表すモデル (`record`)。
+- **WorkflowStep**: ワークフローの個別の処理ステップ定義を表すモデル (`record`)。
+- **WorkflowStepStatus**: ステップ実行状態の列挙型 (`enum`)。
+
+### 2.7 workspace (ワークスペース・エディタ機能)
+- **MainWorkspaceController**: 全体 IDE 風レイアウト (`MainWorkspace.fxml`) の制御および各サブコンポーネントの調整。
+- **FileTreeController**: ワークスペースファイルツリー表示およびフォルダ選択操作処理。
+- **EditorController**: タブ式テキストエディタのファイル読み込み・編集・保存処理。
+- **WorkspaceFile**: ワークスペース内のファイル/フォルダ構造を表すモデル。
+- **WorkspaceFileService**: ワークスペースツリー構築、ファイル入出力サービス。
+- **WorkspaceFileTools**: LangChain4j Tool Calling 対応のファイルアクセスツール群。
+- **WorkspaceAgent**: AI とのやり取りを定義する LangChain4j AI Services インターフェース。
 
 ## 3. 設計方針
-- **データの不変性 (Immutability)**: 対話履歴や生成結果などの過去データについては Java の `record` を活用し、不変性を担保することでデバッグの容易性を高めます。
+- **機能別パッケージ分割**: コントローラやサービスなどのレイヤーではなく機能単位で Namespace を切り、凝集度を高めます。
+- **データの不変性 (Immutability)**: 対話履歴や設定データなどには Java の `record` を活用し、不変性を高めます。
 - **リアクティブなUI更新**: JavaFX の `Property` や `ObservableList` を活用し、Model の変更が自動的に View に反映されるように設計します。
 - **例外処理の統一化**: 外部API通信やファイルIOなど、失敗の可能性がある処理については、[例外処理方針](../tech/Error-Handling-Policy.md) に基づき一貫したエラーハンドリングを行います。
