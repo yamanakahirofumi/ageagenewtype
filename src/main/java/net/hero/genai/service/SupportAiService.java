@@ -25,6 +25,18 @@ public final class SupportAiService {
         registerCapability(new SecurityCheckCapability());
         registerCapability(new WorkflowListCapability());
         registerCapability(new FileLookupCapability());
+
+        // Register 10 new standard capabilities
+        registerCapability(new GitStatusCapability());
+        registerCapability(new GitLogCapability());
+        registerCapability(new FileReadCapability());
+        registerCapability(new DirectoryListCapability());
+        registerCapability(new WorkspaceInfoCapability());
+        registerCapability(new OllamaStatusCapability());
+        registerCapability(new SecurityRulesListCapability());
+        registerCapability(new FileSearchCapability());
+        registerCapability(new SystemInfoCapability());
+        registerCapability(new DateTimeNowCapability());
     }
 
     /**
