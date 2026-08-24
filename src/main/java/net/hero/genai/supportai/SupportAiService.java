@@ -1,5 +1,20 @@
 package net.hero.genai.supportai;
 
+import net.hero.genai.supportai.capability.DateTimeNowCapability;
+import net.hero.genai.supportai.capability.DirectoryListCapability;
+import net.hero.genai.supportai.capability.FileLookupCapability;
+import net.hero.genai.supportai.capability.FileReadCapability;
+import net.hero.genai.supportai.capability.FileSearchCapability;
+import net.hero.genai.supportai.capability.GitLogCapability;
+import net.hero.genai.supportai.capability.GitStatusCapability;
+import net.hero.genai.supportai.capability.OllamaStatusCapability;
+import net.hero.genai.supportai.capability.SecurityCheckCapability;
+import net.hero.genai.supportai.capability.SecurityRulesListCapability;
+import net.hero.genai.supportai.capability.SupportAICapability;
+import net.hero.genai.supportai.capability.SystemInfoCapability;
+import net.hero.genai.supportai.capability.WorkflowListCapability;
+import net.hero.genai.supportai.capability.WorkspaceInfoCapability;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

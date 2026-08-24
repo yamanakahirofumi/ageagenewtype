@@ -3,6 +3,7 @@ package net.hero.genai.supportai;
 import net.hero.genai.git.GitService;
 import net.hero.genai.security.SecurityService;
 
+import net.hero.genai.supportai.capability.SupportAICapability;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

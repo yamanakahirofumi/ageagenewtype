@@ -1,4 +1,4 @@
-package net.hero.genai.supportai;
+package net.hero.genai.supportai.capability;
 
 /**
  * Support AI capability to retrieve system and runtime environment metadata.

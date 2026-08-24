@@ -1,4 +1,4 @@
-package net.hero.genai.supportai;
+package net.hero.genai.supportai.capability;
 
 /**
  * Interface representing an extensible capability (tool or API) that the Support AI can access.

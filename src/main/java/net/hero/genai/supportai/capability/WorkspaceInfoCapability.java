@@ -1,4 +1,4 @@
-package net.hero.genai.supportai;
+package net.hero.genai.supportai.capability;
 
 import net.hero.genai.git.GitService;
 import net.hero.genai.security.SecurityService;

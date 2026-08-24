@@ -1,4 +1,4 @@
-package net.hero.genai.supportai;
+package net.hero.genai.supportai.capability;
 
 import net.hero.genai.workflow.Workflow;
 import net.hero.genai.workflow.WorkflowService;

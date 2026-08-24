@@ -1,4 +1,4 @@
-package net.hero.genai.supportai;
+package net.hero.genai.supportai.capability;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;

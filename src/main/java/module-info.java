@@ -16,6 +16,7 @@ module net.hero.genai {
     exports net.hero.genai.ollama;
     exports net.hero.genai.security;
     exports net.hero.genai.supportai;
+    exports net.hero.genai.supportai.capability;
     exports net.hero.genai.workflow;
     exports net.hero.genai.workspace;
 
@@ -27,4 +28,5 @@ module net.hero.genai {
     opens net.hero.genai.supportai to javafx.fxml;
     opens net.hero.genai.workflow to javafx.fxml;
     opens net.hero.genai.workspace to javafx.fxml;
+    opens net.hero.genai.supportai.capability to javafx.fxml;
 }
