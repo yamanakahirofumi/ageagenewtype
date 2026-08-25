@@ -92,11 +92,18 @@ public final class WorkflowService {
               "name": "Custom title of the workflow",
               "description": "Short description of the workflow goals",
               "trigger_keywords": [],
+              "orchestration_mode": "PIPELINE_AND_ENSEMBLE",
+              "resource_management": {
+                "serialized_execution": true,
+                "unload_previous_model": true
+              },
               "steps": [
                 {
                   "phase": 1,
                   "name": "Name of output step",
                   "type": "output",
+                  "assigned_model": "model-name-or-null",
+                  "fallback_model": "fallback-model-name-or-null",
                   "description": "Instructions for what to output",
                   "verify_step_id": "verify-step-1"
                 },
@@ -104,6 +111,8 @@ public final class WorkflowService {
                   "phase": 2,
                   "name": "Name of verify step",
                   "type": "verify",
+                  "ensemble_models": [],
+                  "aggregation_strategy": "MAJORITY_VOTE",
                   "description": "Instructions for how to verify step 1 output",
                   "verify_step_id": null
                 }
@@ -390,15 +399,45 @@ public final class WorkflowService {
     }
 
     /**
+     * Resolves the target model to use for a step, with fallback support.
+     */
+    public String resolveModelForStep(WorkflowStep step, String defaultModel, OllamaApiService apiService, String baseUrl) {
+        if (step.assignedModel() != null && !step.assignedModel().isBlank()) {
+            List<String> available = apiService.fetchAvailableModels(baseUrl);
+            if (available.contains(step.assignedModel())) {
+                LOGGER.log(Level.INFO, "Assigned model " + step.assignedModel() + " resolved for step " + step.name());
+                return step.assignedModel();
+            }
+            if (step.fallbackModel() != null && !step.fallbackModel().isBlank() && available.contains(step.fallbackModel())) {
+                LOGGER.log(Level.INFO, "Assigned model unavailable. Fallback model " + step.fallbackModel() + " resolved for step " + step.name());
+                return step.fallbackModel();
+            }
+            LOGGER.log(Level.INFO, "Assigned/Fallback model unavailable. Using default model " + defaultModel + " for step " + step.name());
+        }
+        return defaultModel;
+    }
+
+    /**
      * Executes the current step logic.
      */
-    public void executeStep(String baseUrl, String modelName, OllamaApiService apiService, ChatStreamListener listener, Runnable onStepFinished) {
+    public void executeStep(String baseUrl, String defaultModelName, OllamaApiService apiService, ChatStreamListener listener, Runnable onStepFinished) {
         if (activeWorkflow == null || currentStepIndex < 0 || currentStepIndex >= activeWorkflow.steps().size()) {
             return;
         }
 
         WorkflowStep step = activeWorkflow.steps().get(currentStepIndex);
         stepStatuses.set(currentStepIndex, WorkflowStepStatus.RUNNING);
+
+        String effectiveModel = resolveModelForStep(step, defaultModelName, apiService, baseUrl);
+
+        if (activeWorkflow.resourceManagement() != null && activeWorkflow.resourceManagement().unloadPreviousModel()) {
+            LOGGER.log(Level.INFO, "Resource Management: Serialized execution active. Model set to " + effectiveModel);
+        }
+
+        if (step.ensembleModels() != null && !step.ensembleModels().isEmpty()) {
+            executeEnsembleStep(baseUrl, effectiveModel, step, apiService, listener, onStepFinished);
+            return;
+        }
 
         if ("output".equalsIgnoreCase(step.type())) {
             StringBuilder promptBuilder = new StringBuilder();
@@ -430,7 +469,7 @@ public final class WorkflowService {
             }
 
             String prompt = promptBuilder.toString();
-            apiService.chatStream(baseUrl, modelName, prompt, new ChatStreamListener() {
+            apiService.chatStream(baseUrl, effectiveModel, prompt, new ChatStreamListener() {
                 private final StringBuilder response = new StringBuilder();
                 @Override
                 public void onNext(String token) {
@@ -453,8 +492,9 @@ public final class WorkflowService {
         } else {
             // Verify step
             File workspaceDir = SecurityService.getInstance().getActiveWorkspace();
-            boolean isMavenVerify = (step.name().contains("ビルド") || step.name().contains("テスト") || step.description().contains("compile") || step.description().contains("test"))
-                    && workspaceDir != null && new File(workspaceDir, "pom.xml").exists();
+            boolean isMavenVerify = "MAVEN_TEST".equalsIgnoreCase(step.verifyAction())
+                    || ((step.name().contains("ビルド") || step.name().contains("テスト") || step.description().contains("compile") || step.description().contains("test"))
+                    && workspaceDir != null && new File(workspaceDir, "pom.xml").exists());
 
             if (isMavenVerify) {
                 listener.onNext("[Automated Verification] Executing 'mvn clean test-compile'...\n");
@@ -472,7 +512,7 @@ public final class WorkflowService {
                         stepOutputs.set(currentStepIndex, "Maven build failed:\n" + mavenOutput.toString());
                         stepStatuses.set(currentStepIndex, WorkflowStepStatus.FAILED);
 
-                        triggerLoopback(listener, onStepFinished, "Maven build failed. Please fix the compiler errors.");
+                        triggerLoopback(step, listener, onStepFinished, "Maven build failed. Please fix the compiler errors.");
                     }
                 });
             } else {
@@ -501,7 +541,7 @@ public final class WorkflowService {
                 }
 
                 String prompt = promptBuilder.toString();
-                apiService.chatStream(baseUrl, modelName, prompt, new ChatStreamListener() {
+                apiService.chatStream(baseUrl, effectiveModel, prompt, new ChatStreamListener() {
                     private final StringBuilder response = new StringBuilder();
                     @Override
                     public void onNext(String token) {
@@ -514,7 +554,7 @@ public final class WorkflowService {
                         if (fullResponse.contains("VERIFICATION: FAILED")) {
                             stepStatuses.set(currentStepIndex, WorkflowStepStatus.FAILED);
                             // Do not complete before loopback is processed
-                            triggerLoopback(listener, onStepFinished, "AI self-verification failed. Please address the feedback:\n" + fullResponse);
+                            triggerLoopback(step, listener, onStepFinished, "AI self-verification failed. Please address the feedback:\n" + fullResponse);
                         } else {
                             stepStatuses.set(currentStepIndex, WorkflowStepStatus.SUCCESS);
                             listener.onComplete(fullResponse);
@@ -531,7 +571,79 @@ public final class WorkflowService {
         }
     }
 
-    private void triggerLoopback(ChatStreamListener listener, Runnable onStepFinished, String feedback) {
+    private void executeEnsembleStep(String baseUrl, String aggregatorModel, WorkflowStep step, OllamaApiService apiService, ChatStreamListener listener, Runnable onStepFinished) {
+        listener.onNext("🔀 [Ensemble Verification / Voting Initiated]\nModels: " + String.join(", ", step.ensembleModels()) + "\nStrategy: " + (step.aggregationStrategy() != null ? step.aggregationStrategy() : "MAJORITY_VOTE") + "\n\n");
+
+        Thread.startVirtualThread(() -> {
+            try {
+                List<String> outputs = new ArrayList<>();
+                int prevOutputIdx = currentStepIndex - 1;
+                String targetArtifact = prevOutputIdx >= 0 ? stepOutputs.get(prevOutputIdx) : userRequest;
+
+                for (String model : step.ensembleModels()) {
+                    listener.onNext("▶ Querying model [" + model + "]...\n");
+                    String prompt = "=== ENSEMBLE EVALUATION STEP: " + step.name() + " ===\n"
+                            + "Task Description: " + step.description() + "\n"
+                            + "Target Artifact/Input:\n" + targetArtifact + "\n\n"
+                            + "Evaluate/Verify this input according to the description.";
+                    String resp = apiService.chat(baseUrl, model, prompt);
+                    outputs.add("Model [" + model + "]:\n" + resp);
+                    listener.onNext("✔ Output received from [" + model + "].\n\n");
+                }
+
+                String strategy = step.aggregationStrategy() != null ? step.aggregationStrategy() : "MAJORITY_VOTE";
+                listener.onNext("📊 [Aggregating Ensemble Results via Strategy: " + strategy + "]\n");
+
+                StringBuilder aggPrompt = new StringBuilder();
+                aggPrompt.append("You are an ensemble aggregator AI. Evaluate and aggregate the following model outputs:\n\n");
+                for (int i = 0; i < outputs.size(); i++) {
+                    aggPrompt.append("--- Output ").append(i + 1).append(" ---\n").append(outputs.get(i)).append("\n\n");
+                }
+                if ("MAJORITY_VOTE".equalsIgnoreCase(strategy)) {
+                    aggPrompt.append("Select the single best output among these models, scoring them based on accuracy, readability, and robustness. State the chosen model and explain the decision.");
+                } else {
+                    aggPrompt.append("Synthesize a single consolidated result by integrating the best parts of each model output.");
+                }
+
+                if ("verify".equalsIgnoreCase(step.type())) {
+                    aggPrompt.append("\nAt the end of your evaluation, output 'VERIFICATION: SUCCESS' if valid, or 'VERIFICATION: FAILED' with specific issues.");
+                }
+
+                apiService.chatStream(baseUrl, aggregatorModel, aggPrompt.toString(), new ChatStreamListener() {
+                    private final StringBuilder response = new StringBuilder();
+                    @Override
+                    public void onNext(String token) {
+                        response.append(token);
+                        listener.onNext(token);
+                    }
+                    @Override
+                    public void onComplete(String fullResponse) {
+                        stepOutputs.set(currentStepIndex, fullResponse);
+                        if ("verify".equalsIgnoreCase(step.type()) && fullResponse.contains("VERIFICATION: FAILED")) {
+                            stepStatuses.set(currentStepIndex, WorkflowStepStatus.FAILED);
+                            triggerLoopback(step, listener, onStepFinished, "Ensemble verification failed:\n" + fullResponse);
+                        } else {
+                            stepStatuses.set(currentStepIndex, WorkflowStepStatus.SUCCESS);
+                            listener.onComplete(fullResponse);
+                            onStepFinished.run();
+                        }
+                    }
+                    @Override
+                    public void onError(Throwable error) {
+                        stepStatuses.set(currentStepIndex, WorkflowStepStatus.FAILED);
+                        listener.onError(error);
+                    }
+                });
+
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Ensemble step failed", e);
+                stepStatuses.set(currentStepIndex, WorkflowStepStatus.FAILED);
+                listener.onError(e);
+            }
+        });
+    }
+
+    private void triggerLoopback(WorkflowStep currentStep, ChatStreamListener listener, Runnable onStepFinished, String feedback) {
         LOGGER.log(Level.INFO, "Triggering workflow loopback from step index " + currentStepIndex);
         listener.onNext("\n⚠️ Verification failed! Rolling back to the previous output step to fix issues...\n");
         int targetIdx = currentStepIndex - 1;
@@ -540,6 +652,17 @@ public final class WorkflowService {
             String oldOutput = stepOutputs.get(targetIdx);
             stepOutputs.set(targetIdx, "[Feedback from verification failure]:\n" + feedback + "\n\n[Previous output]:\n" + oldOutput);
             currentStepIndex = targetIdx - 1;
+
+            if (currentStep.onFailureRouteModel() != null && !currentStep.onFailureRouteModel().isBlank()) {
+                LOGGER.log(Level.INFO, "On failure route model specified: " + currentStep.onFailureRouteModel() + " for target step index " + targetIdx);
+                WorkflowStep targetStep = activeWorkflow.steps().get(targetIdx);
+                WorkflowStep updatedTargetStep = new WorkflowStep(
+                    targetStep.phase(), targetStep.name(), targetStep.type(), targetStep.description(),
+                    targetStep.verifyStepId(), currentStep.onFailureRouteModel(), targetStep.fallbackModel(),
+                    targetStep.ensembleModels(), targetStep.aggregationStrategy(), targetStep.verifyAction(), targetStep.onFailureRouteModel()
+                );
+                activeWorkflow.steps().set(targetIdx, updatedTargetStep);
+            }
         }
         listener.onComplete("VERIFICATION FAILED: " + feedback);
         onStepFinished.run();
@@ -579,20 +702,23 @@ public final class WorkflowService {
     public void loadBuiltInWorkflows() {
         LOGGER.log(Level.INFO, "Loading built-in workflows...");
         predefinedWorkflows.clear();
-        try (InputStream is = getClass().getResourceAsStream("/workflows/source-code-creation.json")) {
-            if (is != null) {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                    String json = reader.lines().collect(Collectors.joining("\n"));
-                    Workflow wf = parseWorkflowJson(json);
-                    predefinedWorkflows.add(wf);
-                    LOGGER.log(Level.INFO, "Successfully loaded built-in workflow: " + wf.id());
+        List<String> builtInFiles = List.of("/workflows/source-code-creation.json", "/workflows/multi-model-source-creation.json");
+        for (String resourcePath : builtInFiles) {
+            try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+                if (is != null) {
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                        String json = reader.lines().collect(Collectors.joining("\n"));
+                        Workflow wf = parseWorkflowJson(json);
+                        predefinedWorkflows.add(wf);
+                        LOGGER.log(Level.INFO, "Successfully loaded built-in workflow: " + wf.id());
+                    }
+                } else {
+                    LOGGER.log(Level.WARNING, "Built-in workflow resource " + resourcePath + " not found in classpath.");
                 }
-            } else {
-                LOGGER.log(Level.WARNING, "Built-in source-code-creation.json not found in classpath.");
+            } catch (IOException e) {
+                LOGGER.log(Level.SEVERE, "Failed to load built-in workflow from resource: " + resourcePath, e);
+                throw new UncheckedIOException(e);
             }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "Failed to load built-in workflows", e);
-            throw new UncheckedIOException(e);
         }
     }
 
@@ -636,9 +762,43 @@ public final class WorkflowService {
         String name = extractStringField(json, "name");
         String description = extractStringField(json, "description");
         List<String> triggerKeywords = extractArrayField(json, "trigger_keywords");
+        String orchestrationMode = extractStringField(json, "orchestration_mode");
+        if (orchestrationMode.isEmpty()) {
+            orchestrationMode = "SINGLE_MODEL";
+        }
+        ResourceManagement resourceManagement = extractResourceManagementField(json);
         List<WorkflowStep> steps = extractStepsField(json);
 
-        return new Workflow(id, name, description, triggerKeywords, steps);
+        return new Workflow(id, name, description, triggerKeywords, steps, orchestrationMode, resourceManagement);
+    }
+
+    private static ResourceManagement extractResourceManagementField(String json) {
+        int idx = json.indexOf("\"resource_management\"");
+        if (idx == -1) {
+            return new ResourceManagement(true, true);
+        }
+        int startBrace = json.indexOf('{', idx);
+        int endBrace = json.indexOf('}', idx);
+        if (startBrace == -1 || endBrace == -1 || endBrace <= startBrace) {
+            return new ResourceManagement(true, true);
+        }
+        String rmJson = json.substring(startBrace, endBrace + 1);
+        boolean serializedExecution = true;
+        boolean unloadPreviousModel = true;
+
+        Pattern sPattern = Pattern.compile("\"serialized_execution\"\\s*:\\s*(true|false)");
+        Matcher sMatcher = sPattern.matcher(rmJson);
+        if (sMatcher.find()) {
+            serializedExecution = Boolean.parseBoolean(sMatcher.group(1));
+        }
+
+        Pattern uPattern = Pattern.compile("\"unload_previous_model\"\\s*:\\s*(true|false)");
+        Matcher uMatcher = uPattern.matcher(rmJson);
+        if (uMatcher.find()) {
+            unloadPreviousModel = Boolean.parseBoolean(uMatcher.group(1));
+        }
+
+        return new ResourceManagement(serializedExecution, unloadPreviousModel);
     }
 
     private static String extractStringField(String json, String field) {
@@ -735,7 +895,29 @@ public final class WorkflowService {
             if (verifyStepId.isEmpty() || "null".equals(verifyStepId)) {
                 verifyStepId = null;
             }
-            steps.add(new WorkflowStep(phase, name, type, description, verifyStepId));
+            String assignedModel = extractStringField(stepJson, "assigned_model");
+            if (assignedModel.isEmpty() || "null".equals(assignedModel)) {
+                assignedModel = null;
+            }
+            String fallbackModel = extractStringField(stepJson, "fallback_model");
+            if (fallbackModel.isEmpty() || "null".equals(fallbackModel)) {
+                fallbackModel = null;
+            }
+            List<String> ensembleModels = extractArrayField(stepJson, "ensemble_models");
+            String aggregationStrategy = extractStringField(stepJson, "aggregation_strategy");
+            if (aggregationStrategy.isEmpty() || "null".equals(aggregationStrategy)) {
+                aggregationStrategy = null;
+            }
+            String verifyAction = extractStringField(stepJson, "verify_action");
+            if (verifyAction.isEmpty() || "null".equals(verifyAction)) {
+                verifyAction = null;
+            }
+            String onFailureRouteModel = extractStringField(stepJson, "on_failure_route_model");
+            if (onFailureRouteModel.isEmpty() || "null".equals(onFailureRouteModel)) {
+                onFailureRouteModel = null;
+            }
+
+            steps.add(new WorkflowStep(phase, name, type, description, verifyStepId, assignedModel, fallbackModel, ensembleModels, aggregationStrategy, verifyAction, onFailureRouteModel));
         }
         return steps;
     }

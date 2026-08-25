@@ -323,4 +323,75 @@ public final class WorkflowServiceTest {
         assertTrue(capturedPrompt[0].contains("=== REVISION / FEEDBACK FOR THIS STEP ==="));
         assertTrue(capturedPrompt[0].contains("[User Feedback]: Please add more details."));
     }
+
+    @Test
+    @DisplayName("LoadBuiltInWorkflows should load multi-model source creation workflow")
+    public void loadBuiltInWorkflows_ShouldLoadMultiModelWorkflow() {
+        // Arrange & Act
+        service.loadBuiltInWorkflows();
+        List<Workflow> list = service.getPredefinedWorkflows();
+
+        // Assert
+        Workflow multiModelWf = list.stream()
+                .filter(w -> "multi-model-source-creation".equals(w.id()))
+                .findFirst()
+                .orElse(null);
+        assertNotNull(multiModelWf);
+        assertEquals("マルチモデル協調 ソースコード作成ワークフロー", multiModelWf.name());
+        assertEquals("PIPELINE_AND_ENSEMBLE", multiModelWf.orchestrationMode());
+        assertNotNull(multiModelWf.resourceManagement());
+        assertTrue(multiModelWf.resourceManagement().serializedExecution());
+        assertTrue(multiModelWf.resourceManagement().unloadPreviousModel());
+        assertEquals(5, multiModelWf.steps().size());
+
+        WorkflowStep step1 = multiModelWf.steps().get(0);
+        assertEquals("deepseek-r1:8b", step1.assignedModel());
+        assertEquals("qwen2.5:7b", step1.fallbackModel());
+
+        WorkflowStep step2 = multiModelWf.steps().get(1);
+        assertEquals(2, step2.ensembleModels().size());
+        assertEquals("MAJORITY_VOTE", step2.aggregationStrategy());
+
+        WorkflowStep step5 = multiModelWf.steps().get(4);
+        assertEquals("MAVEN_TEST", step5.verifyAction());
+        assertEquals("deepseek-r1:8b", step5.onFailureRouteModel());
+    }
+
+    @Test
+    @DisplayName("ResolveModelForStep should fallback when assigned model is not available")
+    public void resolveModelForStep_WhenAssignedUnavailable_ShouldUseFallback() {
+        // Arrange
+        WorkflowStep step = new WorkflowStep(1, "Step1", "output", "Desc", null, "assigned-model", "fallback-model", List.of(), null, null, null);
+        OllamaApiService mockApi = new OllamaApiService() {
+            @Override
+            public List<String> fetchAvailableModels(String baseUrl) {
+                return List.of("fallback-model", "default-model");
+            }
+        };
+
+        // Act
+        String resolved = service.resolveModelForStep(step, "default-model", mockApi, "http://localhost:11434");
+
+        // Assert
+        assertEquals("fallback-model", resolved);
+    }
+
+    @Test
+    @DisplayName("ResolveModelForStep should return default model when both assigned and fallback models are unavailable")
+    public void resolveModelForStep_WhenBothUnavailable_ShouldUseDefaultModel() {
+        // Arrange
+        WorkflowStep step = new WorkflowStep(1, "Step1", "output", "Desc", null, "assigned-model", "fallback-model", List.of(), null, null, null);
+        OllamaApiService mockApi = new OllamaApiService() {
+            @Override
+            public List<String> fetchAvailableModels(String baseUrl) {
+                return List.of("default-model");
+            }
+        };
+
+        // Act
+        String resolved = service.resolveModelForStep(step, "default-model", mockApi, "http://localhost:11434");
+
+        // Assert
+        assertEquals("default-model", resolved);
+    }
 }

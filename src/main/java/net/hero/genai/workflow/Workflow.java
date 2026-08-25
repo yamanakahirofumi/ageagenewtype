@@ -7,7 +7,9 @@ public record Workflow(
     String name,
     String description,
     List<String> triggerKeywords,
-    List<WorkflowStep> steps
+    List<WorkflowStep> steps,
+    String orchestrationMode,
+    ResourceManagement resourceManagement
 ) {
     public Workflow {
         if (id == null) {
@@ -25,5 +27,13 @@ public record Workflow(
         if (steps == null) {
             steps = List.of();
         }
+        if (resourceManagement == null) {
+            resourceManagement = new ResourceManagement(true, true);
+        }
+    }
+
+    // Overloaded constructor for backward compatibility with single-model workflows
+    public Workflow(String id, String name, String description, List<String> triggerKeywords, List<WorkflowStep> steps) {
+        this(id, name, description, triggerKeywords, steps, "SINGLE_MODEL", new ResourceManagement(true, true));
     }
 }
