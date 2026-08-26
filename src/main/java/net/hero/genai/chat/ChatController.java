@@ -99,7 +99,7 @@ public final class ChatController {
         chatSession.setSelectedModel(comboModel.getSelectionModel().getSelectedItem());
 
         // Initialize comboWorkflow with default options
-        comboWorkflow.getItems().addAll("自動判定 (Auto)", "標準チャット (Standard)", "ソースコード作成・修正ワークフロー");
+        comboWorkflow.getItems().addAll("自動判定 (Auto)", "標準チャット (Standard)", "ソースコード作成・修正ワークフロー", "マルチモデル協調 ソースコード作成ワークフロー");
         comboWorkflow.getSelectionModel().select(0);
 
         // Sync selected model to ChatSession and StatusBar
@@ -368,16 +368,17 @@ public final class ChatController {
                     String selectedWf = comboWorkflow.getSelectionModel().getSelectedItem();
                     boolean forceStandard = "標準チャット (Standard)".equals(selectedWf) || service.isStandardChatMode();
                     boolean forceSourceCode = "ソースコード作成・修正ワークフロー".equals(selectedWf);
+                    boolean forceMultiModel = "マルチモデル協調 ソースコード作成ワークフロー".equals(selectedWf);
 
                     if (forceStandard) {
                         // User forced standard chat: directly execute without showing proposal screen
                         service.setStandardChatMode(true);
                         executeStandardChatAfterDetermination(finalUserRequest);
-                    } else if (forceSourceCode) {
-                        // User forced Source Code Creation: propose the predefined source-code-creation workflow
+                    } else if (forceSourceCode || forceMultiModel) {
+                        String targetId = forceMultiModel ? "multi-model-source-creation" : "source-code-creation";
                         Workflow matched = null;
                         for (Workflow wf : service.getPredefinedWorkflows()) {
-                            if ("source-code-creation".equals(wf.id())) {
+                            if (targetId.equals(wf.id())) {
                                 matched = wf;
                                 break;
                             }
@@ -386,9 +387,9 @@ public final class ChatController {
                             service.setProposedWorkflow(matched);
                             service.setPendingUserRequest(finalUserRequest);
                             updateWorkflowPanelUI();
-                            appendSystemInfoMessage("ソースコード作成・修正ワークフローを提案しました。開始するには承認してください。");
+                            appendSystemInfoMessage(matched.name() + "を提案しました。開始するには承認してください。");
                         } else {
-                            appendSystemInfoMessage("Error: Built-in source-code-creation workflow not found. Proposing standard chat instead.");
+                            appendSystemInfoMessage("Error: Built-in workflow '" + targetId + "' not found. Proposing standard chat instead.");
                             proposeStandardChat(finalUserRequest);
                         }
                     } else {
@@ -441,10 +442,15 @@ public final class ChatController {
         WorkflowService service = WorkflowService.getInstance();
         Workflow standardChatWf = new Workflow(
             "standard-chat-workflow",
-            "標準チャット",
-            "ワークフローを使用せずに、通常のAIモデルとやり取りを行う標準チャットを実行します。",
+            "標準チャット (マルチモデル対応)",
+            "AIモデルによる応答生成および検証を行う標準チャットを実行します。",
             List.of(),
-            List.of(new WorkflowStep(1, "標準チャットの実行", "output", "通常の対話を行います。", null))
+            List.of(
+                new WorkflowStep(1, "標準チャットの実行", "output", "ユーザーの要求に応答します。", "verify-standard-chat", null, null, List.of(), null, null, null),
+                new WorkflowStep(2, "応答内容の検証", "verify", "生成された応答の正確性と安全性を検証します。", null, null, null, List.of(), "MAJORITY_VOTE", null, null)
+            ),
+            "PIPELINE_AND_ENSEMBLE",
+            new net.hero.genai.workflow.ResourceManagement(true, true)
         );
         service.setProposedWorkflow(standardChatWf);
         service.setPendingUserRequest(finalUserRequest);
@@ -617,6 +623,16 @@ public final class ChatController {
                     lblType.setStyle("-fx-text-fill: " + ("verify".equals(step.type()) ? "#e0af68" : "#9ece6a") + "; -fx-font-size: 10px;");
 
                     hbox.getChildren().addAll(lblIcon, lblStep, lblType);
+
+                    if (step.assignedModel() != null) {
+                        Label lblModel = new Label("🤖 " + step.assignedModel());
+                        lblModel.setStyle("-fx-text-fill: #bb9af7; -fx-font-size: 10px;");
+                        hbox.getChildren().add(lblModel);
+                    } else if (step.ensembleModels() != null && !step.ensembleModels().isEmpty()) {
+                        Label lblEnsemble = new Label("🔀 Ensemble (" + step.ensembleModels().size() + " models)");
+                        lblEnsemble.setStyle("-fx-text-fill: #7aa2f7; -fx-font-size: 10px;");
+                        hbox.getChildren().add(lblEnsemble);
+                    }
                     workflowStepsContainer.getChildren().add(hbox);
                 }
             } else if (proposed != null) {
@@ -644,6 +660,16 @@ public final class ChatController {
                     lblType.setStyle("-fx-text-fill: " + ("verify".equals(step.type()) ? "#e0af68" : "#9ece6a") + "; -fx-font-size: 10px;");
 
                     hbox.getChildren().addAll(lblIcon, lblStep, lblType);
+
+                    if (step.assignedModel() != null) {
+                        Label lblModel = new Label("🤖 " + step.assignedModel());
+                        lblModel.setStyle("-fx-text-fill: #bb9af7; -fx-font-size: 10px;");
+                        hbox.getChildren().add(lblModel);
+                    } else if (step.ensembleModels() != null && !step.ensembleModels().isEmpty()) {
+                        Label lblEnsemble = new Label("🔀 Ensemble (" + step.ensembleModels().size() + " models)");
+                        lblEnsemble.setStyle("-fx-text-fill: #7aa2f7; -fx-font-size: 10px;");
+                        hbox.getChildren().add(lblEnsemble);
+                    }
                     workflowStepsContainer.getChildren().add(hbox);
                 }
             } else {
@@ -719,15 +745,20 @@ public final class ChatController {
         Platform.runLater(() -> {
             btnSend.setDisable(true);
 
+            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
+            final String activeModel = chatSession.getSelectedModel();
+            final String effectiveModel = service.resolveModelForStep(step, activeModel, apiService, baseUrl);
+
             final VBox aiBubble = createMessageBubbleContainer("assistant");
-            final Label header = new Label("AI Assistant [Workflow: " + step.name() + "]");
+            String headerText = "AI Assistant (" + effectiveModel + ") [Workflow: " + step.name() + "]";
+            if (step.ensembleModels() != null && !step.ensembleModels().isEmpty()) {
+                headerText = "AI Assistant (Ensemble Aggregator: " + effectiveModel + ") [Workflow: " + step.name() + "]";
+            }
+            final Label header = new Label(headerText);
             header.getStyleClass().add("message-header");
             final TextArea body = createSelectableTextArea("Running step...", "assistant-message-body");
             aiBubble.getChildren().addAll(header, body);
             messagesBox.getChildren().add(aiBubble);
-
-            final String baseUrl = ollamaConfigController != null ? ollamaConfigController.getConfig().getApiBaseUrl() : "http://localhost:11434";
-            final String activeModel = chatSession.getSelectedModel();
 
             final StringBuilder responseBuilder = new StringBuilder();
 

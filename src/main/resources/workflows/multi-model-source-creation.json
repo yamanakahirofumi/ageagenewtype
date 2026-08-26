@@ -1,0 +1,57 @@
+{
+  "id": "multi-model-source-creation",
+  "name": "マルチモデル協調 ソースコード作成ワークフロー",
+  "description": "複数の軽量ローカルモデルを組み合わせて高品質なコードを作成します。",
+  "orchestration_mode": "PIPELINE_AND_ENSEMBLE",
+  "resource_management": {
+    "serialized_execution": true,
+    "unload_previous_model": true
+  },
+  "trigger_keywords": [
+    "マルチモデル",
+    "アンサンブル",
+    "高度ソースコード",
+    "協調作成",
+    "マルチAI"
+  ],
+  "steps": [
+    {
+      "phase": 1,
+      "name": "タスク分解・設計",
+      "type": "output",
+      "assigned_model": "deepseek-r1:8b",
+      "fallback_model": "qwen2.5:7b",
+      "description": "ユーザーの要求からクラス設計とサブタスクを定義します。"
+    },
+    {
+      "phase": 2,
+      "name": "設計アンサンブル検証",
+      "type": "verify",
+      "ensemble_models": ["llama3.2:3b", "gemma2:9b"],
+      "aggregation_strategy": "MAJORITY_VOTE",
+      "description": "作成された設計の整合性を複数モデルで多角的にチェックします。"
+    },
+    {
+      "phase": 3,
+      "name": "コード生成",
+      "type": "output",
+      "assigned_model": "qwen2.5-coder:7b",
+      "description": "確定した設計に基づきコードを実装します。"
+    },
+    {
+      "phase": 4,
+      "name": "相互レビュー (Peer Review)",
+      "type": "verify",
+      "assigned_model": "llama3.2:3b",
+      "description": "コードのセキュリティおよびコード規約違反を評価します。"
+    },
+    {
+      "phase": 5,
+      "name": "コンパイル・自動テスト検証",
+      "type": "verify",
+      "verify_action": "MAVEN_TEST",
+      "on_failure_route_model": "deepseek-r1:8b",
+      "description": "Mavenを使用したテストコンパイル検証を実行します。"
+    }
+  ]
+}
