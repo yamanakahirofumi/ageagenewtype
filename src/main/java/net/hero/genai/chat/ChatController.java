@@ -442,10 +442,15 @@ public final class ChatController {
         WorkflowService service = WorkflowService.getInstance();
         Workflow standardChatWf = new Workflow(
             "standard-chat-workflow",
-            "標準チャット",
-            "ワークフローを使用せずに、通常のAIモデルとやり取りを行う標準チャットを実行します。",
+            "標準チャット (マルチモデル対応)",
+            "AIモデルによる応答生成および検証を行う標準チャットを実行します。",
             List.of(),
-            List.of(new WorkflowStep(1, "標準チャットの実行", "output", "通常の対話を行います。", null))
+            List.of(
+                new WorkflowStep(1, "標準チャットの実行", "output", "ユーザーの要求に応答します。", "verify-standard-chat", null, null, List.of(), null, null, null),
+                new WorkflowStep(2, "応答内容の検証", "verify", "生成された応答の正確性と安全性を検証します。", null, null, null, List.of(), "MAJORITY_VOTE", null, null)
+            ),
+            "PIPELINE_AND_ENSEMBLE",
+            new net.hero.genai.workflow.ResourceManagement(true, true)
         );
         service.setProposedWorkflow(standardChatWf);
         service.setPendingUserRequest(finalUserRequest);
